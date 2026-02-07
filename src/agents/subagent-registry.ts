@@ -13,6 +13,7 @@ export type SubagentRunRecord = {
   runId: string;
   childSessionKey: string;
   requesterSessionKey: string;
+  turnId?: string;
   requesterOrigin?: DeliveryContext;
   requesterDisplayKey: string;
   task: string;
@@ -65,6 +66,7 @@ function resumeSubagentRun(runId: string) {
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
       requesterSessionKey: entry.requesterSessionKey,
+      turnId: entry.turnId,
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,
@@ -226,6 +228,7 @@ function ensureListener() {
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
       requesterSessionKey: entry.requesterSessionKey,
+      turnId: entry.turnId,
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,
@@ -282,6 +285,7 @@ export function registerSubagentRun(params: {
   runId: string;
   childSessionKey: string;
   requesterSessionKey: string;
+  turnId?: string;
   requesterOrigin?: DeliveryContext;
   requesterDisplayKey: string;
   task: string;
@@ -299,6 +303,7 @@ export function registerSubagentRun(params: {
     runId: params.runId,
     childSessionKey: params.childSessionKey,
     requesterSessionKey: params.requesterSessionKey,
+    turnId: params.turnId,
     requesterOrigin,
     requesterDisplayKey: params.requesterDisplayKey,
     task: params.task,
@@ -370,6 +375,7 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
       childSessionKey: entry.childSessionKey,
       childRunId: entry.runId,
       requesterSessionKey: entry.requesterSessionKey,
+      turnId: entry.turnId,
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,

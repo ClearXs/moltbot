@@ -64,6 +64,7 @@ export const ChatInjectParamsSchema = Type.Object(
 export const ChatEventSchema = Type.Object(
   {
     runId: NonEmptyString,
+    turnId: Type.Optional(NonEmptyString),
     sessionKey: NonEmptyString,
     seq: Type.Integer({ minimum: 0 }),
     state: Type.Union([

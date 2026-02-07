@@ -308,7 +308,9 @@ export const AgentToolsSchema = z
 export const MemorySearchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    sources: z.array(z.union([z.literal("memory"), z.literal("sessions")])).optional(),
+    sources: z
+      .array(z.union([z.literal("memory"), z.literal("sessions"), z.literal("knowledge")]))
+      .optional(),
     extraPaths: z.array(z.string()).optional(),
     experimental: z
       .object({
@@ -456,6 +458,86 @@ export const AgentEntrySchema = z
   })
   .strict();
 
+const KnowledgeBaseSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    storage: z
+      .object({
+        maxFileSize: z.number().int().positive().optional(),
+        maxDocuments: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    formats: z
+      .object({
+        pdf: z
+          .object({
+            enabled: z.boolean().optional(),
+            maxPages: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
+        docx: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        txt: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        html: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    upload: z
+      .object({
+        webApi: z.boolean().optional(),
+        chatAttachments: z.boolean().optional(),
+        allowedChannels: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+    search: z
+      .object({
+        autoIndex: z.boolean().optional(),
+        includeInMemorySearch: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    vectorization: z
+      .object({
+        enabled: z.boolean().optional(),
+        provider: z.enum(["openai", "gemini", "local", "auto"]).optional(),
+        model: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    graph: z
+      .object({
+        enabled: z.boolean().optional(),
+        extractor: z.enum(["llm"]).optional(),
+        provider: z.string().optional(),
+        model: z.string().optional(),
+        minTriples: z.number().int().positive().optional(),
+        maxTriples: z.number().int().positive().optional(),
+        triplesPerKTokens: z.number().int().positive().optional(),
+        maxDepth: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional();
+
 export const ToolsSchema = z
   .object({
     profile: ToolProfileSchema,
@@ -463,6 +545,7 @@ export const ToolsSchema = z
     alsoAllow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
+    knowledgeBase: KnowledgeBaseSchema,
     web: ToolsWebSchema,
     media: ToolsMediaSchema,
     links: ToolsLinksSchema,

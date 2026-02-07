@@ -86,6 +86,7 @@ export async function runMemoryFlushIfNeeded(params: {
     registerAgentRunContext(flushRunId, {
       sessionKey: params.sessionKey,
       verboseLevel: params.resolvedVerboseLevel,
+      turnId: params.opts?.turnId,
     });
   }
   let memoryCompactionCompleted = false;
@@ -149,6 +150,7 @@ export async function runMemoryFlushIfNeeded(params: {
           bashElevated: params.followupRun.run.bashElevated,
           timeoutMs: params.followupRun.run.timeoutMs,
           runId: flushRunId,
+          turnId: params.opts?.turnId,
           onAgentEvent: (evt) => {
             if (evt.stream === "compaction") {
               const phase = typeof evt.data.phase === "string" ? evt.data.phase : "";

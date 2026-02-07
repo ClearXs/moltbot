@@ -1,0 +1,810 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { DatabaseSync } from "node:sqlite";
+import busboy from "busboy";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import type { KnowledgeBaseEntry } from "../memory/knowledge-schema.js";
+import {
+  resolveAgentDir,
+  resolveAgentWorkspaceDir,
+  resolveDefaultAgentId,
+} from "../agents/agent-scope.js";
+import { loadConfig } from "../config/config.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import { KnowledgeManager } from "../memory/knowledge-manager.js";
+import { requireNodeSqlite } from "../memory/sqlite.js";
+import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  readJsonBodyOrError,
+  sendInvalidRequest,
+  sendJson,
+  sendMethodNotAllowed,
+  sendUnauthorized,
+} from "./http-common.js";
+import { getBearerToken, resolveAgentIdFromHeader } from "./http-utils.js";
+import { formatError } from "./server-utils.js";
+
+type KnowledgeHttpOptions = {
+  auth: ResolvedGatewayAuth;
+  trustedProxies?: string[];
+};
+
+const DEFAULT_BODY_BYTES = 512 * 1024;
+const log = createSubsystemLogger("knowledge-http");
+
+// Shared database instance
+const dbByAgent = new Map<string, DatabaseSync>();
+
+function getDatabase(agentId: string): DatabaseSync {
+  const existing = dbByAgent.get(agentId);
+  if (existing) {
+    return existing;
+  }
+  const { DatabaseSync: DB } = requireNodeSqlite();
+  const cfg = loadConfig();
+  const agentDir = resolveAgentDir(cfg, agentId);
+  const dbPath = `${agentDir}/memory.db`;
+  try {
+    fs.mkdirSync(agentDir, { recursive: true });
+  } catch (err) {
+    log.error(`failed to ensure agent dir ${agentDir}: ${formatError(err)}`);
+    throw err;
+  }
+  let db: DatabaseSync;
+  try {
+    db = new DB(dbPath);
+  } catch (err) {
+    log.error(`failed to open knowledge db at ${dbPath}: ${formatError(err)}`);
+    throw err;
+  }
+  dbByAgent.set(agentId, db);
+  return db;
+}
+
+function getKnowledgeManager(agentId: string): KnowledgeManager {
+  const cfg = loadConfig();
+  const db = getDatabase(agentId);
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+  return new KnowledgeManager({ cfg, db, baseDir: workspaceDir });
+}
+
+function parseTags(params: URLSearchParams, fallback?: string): string[] | undefined {
+  const raw = params.getAll("tags");
+  const merged = raw.length > 0 ? raw.join(",") : (fallback ?? "");
+  const tags = merged
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  return tags.length > 0 ? tags : undefined;
+}
+
+function parseListParams(params: URLSearchParams, key: string): string[] | undefined {
+  const raw = params.getAll(key);
+  const merged = raw.length > 0 ? raw.join(",") : "";
+  const values = merged
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length ? values : undefined;
+}
+
+function parseLimit(value: string | null, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function parseRangeHeader(
+  rangeHeader: string | undefined,
+  size: number,
+): { start: number; end: number } | null {
+  if (!rangeHeader) {
+    return null;
+  }
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match) {
+    return null;
+  }
+  const startRaw = match[1];
+  const endRaw = match[2];
+  const start = startRaw ? Number.parseInt(startRaw, 10) : 0;
+  const end = endRaw ? Number.parseInt(endRaw, 10) : size - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+    return null;
+  }
+  return {
+    start: Math.max(0, start),
+    end: Math.min(size - 1, end),
+  };
+}
+
+function parseNumberParam(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Parse multipart form data for file upload
+ */
+function parseMultipartUpload(
+  req: IncomingMessage,
+  maxFileSize: number,
+): Promise<{
+  filename: string;
+  buffer: Buffer;
+  mimetype: string;
+  fields: Record<string, string>;
+}> {
+  return new Promise((resolve, reject) => {
+    const bb = busboy({ headers: req.headers, defParamCharset: "utf8" });
+    let filename = "";
+    let mimetype = "";
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    const fields: Record<string, string> = {};
+
+    bb.on(
+      "file",
+      (
+        _fieldname: string,
+        file: NodeJS.ReadableStream,
+        info: { filename: string; mimeType: string },
+      ) => {
+        filename = info.filename;
+        mimetype = info.mimeType;
+
+        file.on("data", (data: Buffer) => {
+          totalSize += data.length;
+          if (totalSize > maxFileSize) {
+            file.resume();
+            reject(new Error(`File too large (max: ${maxFileSize} bytes)`));
+            return;
+          }
+          chunks.push(data);
+        });
+      },
+    );
+
+    bb.on("field", (fieldname: string, value: string) => {
+      fields[fieldname] = value;
+    });
+
+    bb.on("finish", () => {
+      if (!filename || chunks.length === 0) {
+        reject(new Error("No file uploaded"));
+        return;
+      }
+
+      const buffer = Buffer.concat(chunks);
+      resolve({ filename, buffer, mimetype, fields });
+    });
+
+    bb.on("error", (err: Error) => {
+      reject(err);
+    });
+
+    req.pipe(bb);
+  });
+}
+
+function resolveKnowledgeAgentId(req: IncomingMessage) {
+  const cfg = loadConfig();
+  return resolveAgentIdFromHeader(req) ?? resolveDefaultAgentId(cfg);
+}
+
+function toBasePayload(base: KnowledgeBaseEntry) {
+  return {
+    kbId: base.id,
+    name: base.name,
+    description: base.description ?? null,
+    icon: base.icon ?? null,
+    visibility: base.visibility,
+    createdAt: new Date(base.created_at).toISOString(),
+    updatedAt: new Date(base.updated_at).toISOString(),
+  };
+}
+
+export async function handleKnowledgeHttpRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  opts: KnowledgeHttpOptions,
+): Promise<boolean> {
+  try {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    if (!url.pathname.startsWith("/api/knowledge/")) {
+      return false;
+    }
+
+    const token = getBearerToken(req);
+    const authResult = await authorizeGatewayConnect({
+      auth: opts.auth,
+      connectAuth: { token, password: token },
+      req,
+      trustedProxies: opts.trustedProxies,
+    });
+    if (!authResult.ok) {
+      sendUnauthorized(res);
+      return true;
+    }
+
+    const agentId = resolveKnowledgeAgentId(req);
+    const manager = getKnowledgeManager(agentId);
+
+    if (!manager.isEnabled(agentId)) {
+      sendInvalidRequest(res, "Knowledge base is not enabled");
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/upload") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+
+      const config = manager.getConfig(agentId);
+      if (!config) {
+        sendInvalidRequest(res, "Knowledge base configuration not found");
+        return true;
+      }
+      if (!config.upload.webApi) {
+        sendInvalidRequest(res, "Knowledge base web uploads are disabled");
+        return true;
+      }
+
+      try {
+        const { filename, buffer, mimetype, fields } = await parseMultipartUpload(
+          req,
+          config.storage.maxFileSize,
+        );
+
+        const description = fields.description?.trim() || undefined;
+        const tagsField = Object.prototype.hasOwnProperty.call(fields, "tags")
+          ? fields.tags
+          : undefined;
+        const tags =
+          tagsField === undefined
+            ? undefined
+            : tagsField
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean);
+
+        const kbId = fields.kbId?.trim() || undefined;
+        const result = await manager.uploadDocument({
+          kbId,
+          filename,
+          buffer,
+          mimetype,
+          sourceType: "web_api",
+          agentId,
+          description,
+          tags,
+        });
+
+        sendJson(res, 200, {
+          documentId: result.documentId,
+          filename,
+          size: buffer.length,
+          indexed: result.indexed,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Upload failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/update") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+
+      const config = manager.getConfig(agentId);
+      if (!config) {
+        sendInvalidRequest(res, "Knowledge base configuration not found");
+        return true;
+      }
+      if (!config.upload.webApi) {
+        sendInvalidRequest(res, "Knowledge base web uploads are disabled");
+        return true;
+      }
+
+      try {
+        const { filename, buffer, mimetype, fields } = await parseMultipartUpload(
+          req,
+          config.storage.maxFileSize,
+        );
+
+        const kbId = fields.kbId?.trim();
+        const documentId = fields.documentId?.trim();
+        if (!kbId) {
+          sendInvalidRequest(res, "kbId is required");
+          return true;
+        }
+        if (!documentId) {
+          sendInvalidRequest(res, "documentId is required");
+          return true;
+        }
+
+        const description = fields.description?.trim() || undefined;
+        const tagsField = Object.prototype.hasOwnProperty.call(fields, "tags")
+          ? fields.tags
+          : undefined;
+        const tags =
+          tagsField === undefined
+            ? undefined
+            : tagsField
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean);
+
+        const result = await manager.updateDocument({
+          kbId,
+          documentId,
+          filename,
+          buffer,
+          mimetype,
+          sourceType: "web_api",
+          agentId,
+          description,
+          tags,
+        });
+
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendInvalidRequest(res, `Update failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base" && req.method === "POST") {
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const kb = manager.createBase({
+          agentId,
+          name: typeof body.name === "string" ? body.name : "",
+          description: typeof body.description === "string" ? body.description : undefined,
+          icon: typeof body.icon === "string" ? body.icon : undefined,
+          visibility: body.visibility as "private" | "team" | "public" | undefined,
+        });
+        sendJson(res, 200, toBasePayload(kb));
+      } catch (err) {
+        sendInvalidRequest(res, `Create base failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/list") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const limit = parseLimit(url.searchParams.get("limit"), 50);
+      const offset = parseLimit(url.searchParams.get("offset"), 0);
+      const search = url.searchParams.get("search")?.trim() || undefined;
+      const visibility = url.searchParams.get("visibility")?.trim() as
+        | "private"
+        | "team"
+        | "public"
+        | undefined;
+      const tags = parseTags(url.searchParams);
+      try {
+        const list = manager.listBases({
+          agentId,
+          limit,
+          offset,
+          search,
+          visibility,
+          tags,
+        });
+        sendJson(res, 200, {
+          total: list.total,
+          returned: list.returned,
+          offset: list.offset,
+          kbs: list.kbs.map(toBasePayload),
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `List bases failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/get") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      try {
+        const kb = manager.getBase(agentId, kbId);
+        if (!kb) {
+          sendInvalidRequest(res, "Knowledge base not found");
+          return true;
+        }
+        const stats = manager.getGraphStats({ agentId, kbId: kb.id });
+        sendJson(res, 200, { ...toBasePayload(kb), stats });
+      } catch (err) {
+        sendInvalidRequest(res, `Get base failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base" && req.method === "PUT") {
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const kb = manager.updateBase({
+          agentId,
+          kbId: typeof body.kbId === "string" ? body.kbId : "",
+          name: typeof body.name === "string" ? body.name : undefined,
+          description: typeof body.description === "string" ? body.description : undefined,
+          icon: typeof body.icon === "string" ? body.icon : undefined,
+          visibility: body.visibility as "private" | "team" | "public" | undefined,
+        });
+        sendJson(res, 200, toBasePayload(kb));
+      } catch (err) {
+        sendInvalidRequest(res, `Update base failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/delete") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const kbId = typeof body.kbId === "string" ? body.kbId : "";
+        const result = manager.deleteBase({ agentId, kbId });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendInvalidRequest(res, `Delete base failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base" && req.method !== "POST" && req.method !== "PUT") {
+      sendMethodNotAllowed(res, "POST, PUT");
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/file") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const documentId = url.searchParams.get("documentId")?.trim();
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+      try {
+        const resolved = manager.resolveDocumentPath({ agentId, documentId, kbId });
+        const stat = await fsPromises.stat(resolved.absPath);
+        const range = parseRangeHeader(req.headers.range, stat.size);
+        res.setHeader("Content-Type", resolved.mimetype);
+        res.setHeader("Accept-Ranges", "bytes");
+        if (range) {
+          const chunkSize = range.end - range.start + 1;
+          res.statusCode = 206;
+          res.setHeader("Content-Length", chunkSize);
+          res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${stat.size}`);
+          fs.createReadStream(resolved.absPath, { start: range.start, end: range.end }).pipe(res);
+          return true;
+        }
+        res.statusCode = 200;
+        res.setHeader("Content-Length", stat.size);
+        fs.createReadStream(resolved.absPath).pipe(res);
+      } catch (err) {
+        sendInvalidRequest(res, `File preview failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/chunks") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const documentId = url.searchParams.get("documentId")?.trim();
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+      const limit = parseLimit(url.searchParams.get("limit"), 50);
+      const offset = parseLimit(url.searchParams.get("offset"), 0);
+      try {
+        const payload = manager.listChunks({ agentId, documentId, kbId, limit, offset });
+        sendJson(res, 200, payload);
+      } catch (err) {
+        sendInvalidRequest(res, `Chunks fetch failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/chunk") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const chunkId = url.searchParams.get("chunkId")?.trim();
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!chunkId) {
+        sendInvalidRequest(res, "chunkId is required");
+        return true;
+      }
+      try {
+        const chunk = manager.getChunk({ agentId, chunkId, kbId });
+        sendJson(res, 200, { chunk });
+      } catch (err) {
+        sendInvalidRequest(res, `Chunk fetch failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/list") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+
+      const tags = parseTags(url.searchParams);
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      const limit = parseLimit(url.searchParams.get("limit"), 20);
+      const offset = parseLimit(url.searchParams.get("offset"), 0);
+
+      try {
+        const documents = manager.listDocuments({
+          agentId,
+          kbId,
+          tags,
+          limit,
+          offset,
+        });
+        const total = manager.getDocumentCount({ agentId, kbId });
+        sendJson(res, 200, {
+          total,
+          returned: documents.length,
+          offset,
+          documents: documents.map((doc) => ({
+            id: doc.id,
+            kbId: doc.kb_id ?? null,
+            filename: doc.filename,
+            mimetype: doc.mimetype,
+            size: doc.size,
+            uploadedAt: new Date(doc.uploaded_at).toISOString(),
+            indexed: doc.indexed_at !== null,
+            tags: doc.tags,
+            description: doc.description,
+            sourceType: doc.source_type,
+          })),
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `List failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/settings") {
+      if (req.method === "GET") {
+        try {
+          const settings = manager.getSettings(agentId);
+          sendJson(res, 200, settings);
+        } catch (err) {
+          sendInvalidRequest(res, `Settings load failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      if (req.method === "PUT") {
+        const body = await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES);
+        if (!body) {
+          return true;
+        }
+        try {
+          const settings = manager.updateSettings(agentId, body as Record<string, unknown>);
+          sendJson(res, 200, settings);
+        } catch (err) {
+          sendInvalidRequest(res, `Settings update failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      sendMethodNotAllowed(res, "GET, PUT");
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/graph/status") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const documentId = url.searchParams.get("documentId")?.trim();
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+      try {
+        const run = manager.getGraphRun({ agentId, documentId, kbId });
+        sendJson(res, 200, { run });
+      } catch (err) {
+        sendInvalidRequest(res, `Graph status failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/graph/stats") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      try {
+        const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+        const stats = manager.getGraphStats({ agentId, kbId });
+        sendJson(res, 200, stats);
+      } catch (err) {
+        sendInvalidRequest(res, `Graph stats failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/graph/subgraph") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      const keyword = url.searchParams.get("keyword")?.trim() ?? "";
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      const documentIds = parseListParams(url.searchParams, "documentId");
+      const relation = url.searchParams.get("relation")?.trim() || undefined;
+      const entityPrefix = url.searchParams.get("entityPrefix")?.trim() || undefined;
+      const createdAfter = parseNumberParam(url.searchParams.get("createdAfter"));
+      const createdBefore = parseNumberParam(url.searchParams.get("createdBefore"));
+      const minDegree = parseNumberParam(url.searchParams.get("minDegree"));
+      if (
+        !keyword &&
+        !(documentIds?.length || relation || entityPrefix || createdAfter || createdBefore)
+      ) {
+        sendInvalidRequest(res, "keyword or filters are required");
+        return true;
+      }
+      const maxDepth = parseLimit(url.searchParams.get("maxDepth"), 2);
+      const maxTriples = parseLimit(url.searchParams.get("maxTriples"), 200);
+      try {
+        const result = manager.queryGraphSubgraph({
+          agentId,
+          keyword,
+          kbId,
+          maxDepth,
+          maxTriples,
+          documentIds,
+          relation,
+          entityPrefix,
+          createdAfter,
+          createdBefore,
+          minDegree,
+        });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendInvalidRequest(res, `Graph query failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/get") {
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+
+      const documentId = url.searchParams.get("documentId");
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+
+      try {
+        const doc = manager.getDocument({ documentId, agentId, kbId });
+        if (!doc) {
+          sendInvalidRequest(res, `Document not found: ${documentId}`);
+          return true;
+        }
+
+        sendJson(res, 200, {
+          id: doc.id,
+          kbId: doc.kb_id ?? null,
+          filename: doc.filename,
+          filepath: doc.filepath,
+          mimetype: doc.mimetype,
+          size: doc.size,
+          hash: doc.hash,
+          sourceType: doc.source_type,
+          sourceMetadata: doc.source_metadata ? JSON.parse(doc.source_metadata) : null,
+          uploadedAt: new Date(doc.uploaded_at).toISOString(),
+          indexedAt: doc.indexed_at ? new Date(doc.indexed_at).toISOString() : null,
+          description: doc.description,
+          tags: doc.tags,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Get failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/delete") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+
+      let documentId = url.searchParams.get("documentId") ?? "";
+      let kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (!documentId) {
+        const bodyUnknown = await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES);
+        if (bodyUnknown === undefined) {
+          return true;
+        }
+        const body = bodyUnknown as { documentId?: unknown; kbId?: unknown } | null;
+        if (body && typeof body === "object" && typeof body.documentId === "string") {
+          documentId = body.documentId.trim();
+        }
+        if (!kbId && body && typeof body === "object" && typeof body.kbId === "string") {
+          const resolved = body.kbId.trim();
+          kbId = resolved || undefined;
+        }
+      }
+
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+
+      try {
+        const result = await manager.deleteDocument({ documentId, agentId, kbId });
+        if (!result.success) {
+          sendInvalidRequest(res, `Document not found: ${documentId}`);
+          return true;
+        }
+        sendJson(res, 200, { success: true, documentId });
+      } catch (err) {
+        sendInvalidRequest(res, `Delete failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    log.error(`knowledge http request failed: ${formatError(err)}`);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Internal Server Error");
+    }
+    return true;
+  }
+}

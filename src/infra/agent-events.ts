@@ -4,6 +4,7 @@ export type AgentEventStream = "lifecycle" | "tool" | "assistant" | "error" | (s
 
 export type AgentEventPayload = {
   runId: string;
+  turnId?: string;
   seq: number;
   stream: AgentEventStream;
   ts: number;
@@ -15,6 +16,7 @@ export type AgentRunContext = {
   sessionKey?: string;
   verboseLevel?: VerboseLevel;
   isHeartbeat?: boolean;
+  turnId?: string;
 };
 
 // Keep per-run counters so streams stay strictly monotonic per runId.
@@ -39,6 +41,9 @@ export function registerAgentRunContext(runId: string, context: AgentRunContext)
   }
   if (context.isHeartbeat !== undefined && existing.isHeartbeat !== context.isHeartbeat) {
     existing.isHeartbeat = context.isHeartbeat;
+  }
+  if (context.turnId && existing.turnId !== context.turnId) {
+    existing.turnId = context.turnId;
   }
 }
 
@@ -65,6 +70,7 @@ export function emitAgentEvent(event: Omit<AgentEventPayload, "seq" | "ts">) {
   const enriched: AgentEventPayload = {
     ...event,
     sessionKey,
+    turnId: event.turnId ?? context?.turnId,
     seq: nextSeq,
     ts: Date.now(),
   };

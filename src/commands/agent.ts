@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentCommandOpts } from "./agent/types.js";
 import {
   listAgentIds,
@@ -156,6 +157,7 @@ export async function agentCommand(
   } = sessionResolution;
   let sessionEntry = resolvedSessionEntry;
   const runId = opts.runId?.trim() || sessionId;
+  const turnId = opts.turnId ?? randomUUID();
 
   try {
     if (opts.deliver === true) {
@@ -183,6 +185,7 @@ export async function agentCommand(
       registerAgentRunContext(runId, {
         sessionKey,
         verboseLevel: resolvedVerboseLevel,
+        turnId,
       });
     }
 
@@ -447,6 +450,7 @@ export async function agentCommand(
             verboseLevel: resolvedVerboseLevel,
             timeoutMs,
             runId,
+            turnId,
             lane: opts.lane,
             abortSignal: opts.abortSignal,
             extraSystemPrompt: opts.extraSystemPrompt,

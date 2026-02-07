@@ -4,6 +4,7 @@ import { NonEmptyString, SessionLabelString } from "./primitives.js";
 export const AgentEventSchema = Type.Object(
   {
     runId: NonEmptyString,
+    turnId: Type.Optional(NonEmptyString),
     seq: Type.Integer({ minimum: 0 }),
     stream: NonEmptyString,
     ts: Type.Integer({ minimum: 0 }),
@@ -65,6 +66,7 @@ export const AgentParamsSchema = Type.Object(
     lane: Type.Optional(Type.String()),
     extraSystemPrompt: Type.Optional(Type.String()),
     idempotencyKey: NonEmptyString,
+    turnId: Type.Optional(NonEmptyString),
     label: Type.Optional(SessionLabelString),
     spawnedBy: Type.Optional(Type.String()),
   },

@@ -25,6 +25,7 @@ export async function runSessionsSendA2AFlow(params: {
   requesterChannel?: GatewayMessageChannel;
   roundOneReply?: string;
   waitRunId?: string;
+  turnId?: string;
 }) {
   const runContextId = params.waitRunId ?? "unknown";
   try {
@@ -83,6 +84,7 @@ export async function runSessionsSendA2AFlow(params: {
           extraSystemPrompt: replyPrompt,
           timeoutMs: params.announceTimeoutMs,
           lane: AGENT_LANE_NESTED,
+          turnId: params.turnId,
         });
         if (!replyText || isReplySkip(replyText)) {
           break;
@@ -110,6 +112,7 @@ export async function runSessionsSendA2AFlow(params: {
       extraSystemPrompt: announcePrompt,
       timeoutMs: params.announceTimeoutMs,
       lane: AGENT_LANE_NESTED,
+      turnId: params.turnId,
     });
     if (announceTarget && announceReply && announceReply.trim() && !isAnnounceSkip(announceReply)) {
       try {

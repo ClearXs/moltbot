@@ -23,7 +23,7 @@ import {
   resolveMatrixAccount,
   type ResolvedMatrixAccount,
 } from "./matrix/accounts.js";
-import { resolveMatrixAuth } from "./matrix/client.js";
+import { resolveMatrixAuth } from "./matrix/client/config.js";
 import { normalizeAllowListLower } from "./matrix/monitor/allowlist.js";
 import { probeMatrix } from "./matrix/probe.js";
 import { sendMessageMatrix } from "./matrix/send.js";

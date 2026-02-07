@@ -118,6 +118,7 @@ export function createOpenClawCodingTools(options?: {
   messageTo?: string;
   messageThreadId?: string | number;
   sandbox?: SandboxContext | null;
+  turnId?: string;
   sessionKey?: string;
   agentDir?: string;
   workspaceDir?: string;
@@ -324,6 +325,7 @@ export function createOpenClawCodingTools(options?: {
       agentAccountId: options?.agentAccountId,
       agentTo: options?.messageTo,
       agentThreadId: options?.messageThreadId,
+      turnId: options?.turnId,
       agentGroupId: options?.groupId ?? null,
       agentGroupChannel: options?.groupChannel ?? null,
       agentGroupSpace: options?.groupSpace ?? null,

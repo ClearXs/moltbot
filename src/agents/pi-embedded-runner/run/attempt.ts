@@ -217,6 +217,7 @@ export async function runEmbeddedAttempt(
           agentAccountId: params.agentAccountId,
           messageTo: params.messageTo,
           messageThreadId: params.messageThreadId,
+          turnId: params.turnId,
           groupId: params.groupId,
           groupChannel: params.groupChannel,
           groupSpace: params.groupSpace,

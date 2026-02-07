@@ -4,10 +4,11 @@ import type { OpenClawConfig, MemorySearchConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
 import { resolveAgentConfig } from "./agent-scope.js";
+import { resolveKnowledgeConfig } from "./knowledge-config.js";
 
 export type ResolvedMemorySearchConfig = {
   enabled: boolean;
-  sources: Array<"memory" | "sessions">;
+  sources: Array<"memory" | "sessions" | "knowledge">;
   extraPaths: string[];
   provider: "openai" | "local" | "gemini" | "auto";
   remote?: {
@@ -70,6 +71,11 @@ export type ResolvedMemorySearchConfig = {
   };
 };
 
+export type MemorySearchOverrides = {
+  provider?: "openai" | "local" | "gemini" | "auto";
+  model?: string;
+};
+
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-small";
 const DEFAULT_GEMINI_MODEL = "gemini-embedding-001";
 const DEFAULT_CHUNK_TOKENS = 400;
@@ -87,10 +93,10 @@ const DEFAULT_CACHE_ENABLED = true;
 const DEFAULT_SOURCES: Array<"memory" | "sessions"> = ["memory"];
 
 function normalizeSources(
-  sources: Array<"memory" | "sessions"> | undefined,
+  sources: Array<"memory" | "sessions" | "knowledge"> | undefined,
   sessionMemoryEnabled: boolean,
-): Array<"memory" | "sessions"> {
-  const normalized = new Set<"memory" | "sessions">();
+): Array<"memory" | "sessions" | "knowledge"> {
+  const normalized = new Set<"memory" | "sessions" | "knowledge">();
   const input = sources?.length ? sources : DEFAULT_SOURCES;
   for (const source of input) {
     if (source === "memory") {
@@ -98,6 +104,9 @@ function normalizeSources(
     }
     if (source === "sessions" && sessionMemoryEnabled) {
       normalized.add("sessions");
+    }
+    if (source === "knowledge") {
+      normalized.add("knowledge");
     }
   }
   if (normalized.size === 0) {
@@ -169,7 +178,10 @@ function mergeConfig(
     modelPath: overrides?.local?.modelPath ?? defaults?.local?.modelPath,
     modelCacheDir: overrides?.local?.modelCacheDir ?? defaults?.local?.modelCacheDir,
   };
-  const sources = normalizeSources(overrides?.sources ?? defaults?.sources, sessionMemory);
+  const sources: Array<"memory" | "sessions" | "knowledge"> = normalizeSources(
+    overrides?.sources ?? defaults?.sources,
+    sessionMemory,
+  );
   const rawPaths = [...(defaults?.extraPaths ?? []), ...(overrides?.extraPaths ?? [])]
     .map((value) => value.trim())
     .filter(Boolean);
@@ -289,12 +301,23 @@ function mergeConfig(
 export function resolveMemorySearchConfig(
   cfg: OpenClawConfig,
   agentId: string,
+  overrides?: MemorySearchOverrides,
 ): ResolvedMemorySearchConfig | null {
   const defaults = cfg.agents?.defaults?.memorySearch;
-  const overrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
-  const resolved = mergeConfig(defaults, overrides, agentId);
+  const agentOverrides = resolveAgentConfig(cfg, agentId)?.memorySearch;
+  const resolved = mergeConfig(defaults, agentOverrides, agentId);
   if (!resolved.enabled) {
     return null;
+  }
+  if (overrides?.provider) {
+    resolved.provider = overrides.provider;
+  }
+  if (overrides?.model) {
+    resolved.model = overrides.model;
+  }
+  const knowledgeConfig = resolveKnowledgeConfig(cfg, agentId);
+  if (knowledgeConfig?.search.includeInMemorySearch && !resolved.sources.includes("knowledge")) {
+    resolved.sources = [...resolved.sources, "knowledge"];
   }
   return resolved;
 }

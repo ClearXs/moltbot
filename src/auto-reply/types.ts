@@ -16,6 +16,8 @@ export type ModelSelectedContext = {
 export type GetReplyOptions = {
   /** Override run id for agent events (defaults to random UUID). */
   runId?: string;
+  /** Turn id for grouping related runs triggered by a single user message. */
+  turnId?: string;
   /** Abort signal for the underlying agent run. */
   abortSignal?: AbortSignal;
   /** Optional inbound images (used for webchat attachments). */

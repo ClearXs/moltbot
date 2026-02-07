@@ -145,7 +145,13 @@ export function createAgentEventHandler({
   resolveSessionKeyForRun,
   clearAgentRunContext,
 }: AgentEventHandlerOptions) {
-  const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
+  const emitChatDelta = (
+    sessionKey: string,
+    clientRunId: string,
+    seq: number,
+    text: string,
+    turnId?: string,
+  ) => {
     chatRunState.buffers.set(clientRunId, text);
     const now = Date.now();
     const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
@@ -155,6 +161,7 @@ export function createAgentEventHandler({
     chatRunState.deltaSentAt.set(clientRunId, now);
     const payload = {
       runId: clientRunId,
+      turnId,
       sessionKey,
       seq,
       state: "delta" as const,
@@ -177,6 +184,7 @@ export function createAgentEventHandler({
     seq: number,
     jobState: "done" | "error",
     error?: unknown,
+    turnId?: string,
   ) => {
     const text = chatRunState.buffers.get(clientRunId)?.trim() ?? "";
     chatRunState.buffers.delete(clientRunId);
@@ -184,6 +192,7 @@ export function createAgentEventHandler({
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
+        turnId,
         sessionKey,
         seq,
         state: "final" as const,
@@ -204,6 +213,7 @@ export function createAgentEventHandler({
     }
     const payload = {
       runId: clientRunId,
+      turnId,
       sessionKey,
       seq,
       state: "error" as const,
@@ -270,7 +280,8 @@ export function createAgentEventHandler({
     if (sessionKey) {
       nodeSendToSession(sessionKey, "agent", agentPayload);
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
-        emitChatDelta(sessionKey, clientRunId, evt.seq, evt.data.text);
+        const turnId = evt.turnId ?? getAgentRunContext(evt.runId)?.turnId;
+        emitChatDelta(sessionKey, clientRunId, evt.seq, evt.data.text, turnId);
       } else if (!isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {
         if (chatLink) {
           const finished = chatRunState.registry.shift(evt.runId);
@@ -278,20 +289,24 @@ export function createAgentEventHandler({
             clearAgentRunContext(evt.runId);
             return;
           }
+          const turnId = evt.turnId ?? getAgentRunContext(evt.runId)?.turnId;
           emitChatFinal(
             finished.sessionKey,
             finished.clientRunId,
             evt.seq,
             lifecyclePhase === "error" ? "error" : "done",
             evt.data?.error,
+            turnId,
           );
         } else {
+          const turnId = evt.turnId ?? getAgentRunContext(evt.runId)?.turnId;
           emitChatFinal(
             sessionKey,
             evt.runId,
             evt.seq,
             lifecyclePhase === "error" ? "error" : "done",
             evt.data?.error,
+            turnId,
           );
         }
       } else if (isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {

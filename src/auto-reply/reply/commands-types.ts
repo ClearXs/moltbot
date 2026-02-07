@@ -50,6 +50,7 @@ export type HandleCommandsParams = {
   contextTokens: number;
   isGroup: boolean;
   skillCommands?: SkillCommandSpec[];
+  turnId?: string;
 };
 
 export type CommandHandlerResult = {

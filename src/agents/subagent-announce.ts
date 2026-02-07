@@ -139,6 +139,7 @@ async function sendAnnounce(item: AnnounceQueueItem) {
       threadId,
       deliver: true,
       idempotencyKey: crypto.randomUUID(),
+      turnId: item.turnId,
     },
     expectFinal: true,
     timeoutMs: 60_000,
@@ -182,6 +183,7 @@ async function maybeQueueSubagentAnnounce(params: {
   triggerMessage: string;
   summaryLine?: string;
   requesterOrigin?: DeliveryContext;
+  turnId?: string;
 }): Promise<"steered" | "queued" | "none"> {
   const { cfg, entry } = loadRequesterSessionEntry(params.requesterSessionKey);
   const canonicalKey = resolveRequesterStoreKey(cfg, params.requesterSessionKey);
@@ -219,6 +221,7 @@ async function maybeQueueSubagentAnnounce(params: {
         summaryLine: params.summaryLine,
         enqueuedAt: Date.now(),
         sessionKey: canonicalKey,
+        turnId: params.turnId,
         origin,
       },
       settings: queueSettings,
@@ -349,6 +352,7 @@ export async function runSubagentAnnounceFlow(params: {
   childSessionKey: string;
   childRunId: string;
   requesterSessionKey: string;
+  turnId?: string;
   requesterOrigin?: DeliveryContext;
   requesterDisplayKey: string;
   task: string;
@@ -452,6 +456,7 @@ export async function runSubagentAnnounceFlow(params: {
       triggerMessage,
       summaryLine: taskLabel,
       requesterOrigin,
+      turnId: params.turnId,
     });
     if (queued === "steered") {
       didAnnounce = true;
@@ -482,6 +487,7 @@ export async function runSubagentAnnounceFlow(params: {
             ? String(directOrigin.threadId)
             : undefined,
         idempotencyKey: crypto.randomUUID(),
+        turnId: params.turnId,
       },
       expectFinal: true,
       timeoutMs: 60_000,

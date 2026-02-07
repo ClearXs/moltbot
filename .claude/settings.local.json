@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(xargs ls:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(pnpm build:*)",
+      "Bash(git stash push:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pkill:*)",
+      "Bash(pnpm config set:*)",
+      "Bash(pnpm config:*)",
+      "Bash(pnpm test:*)",
+      "Bash(git config:*)",
+      "Bash(pnpm vitest run:*)",
+      "Bash(bunx vitest run:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(node:*)",
+      "Bash(bunx oxlint:*)",
+      "Bash(pnpm check:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(git checkout:*)",
+      "Bash(pnpm format:fix:*)",
+      "Bash(timeout 10 pnpm openclaw --help:*)",
+      "Bash(pnpm openclaw:*)",
+      "Bash(pnpm list:*)",
+      "Bash(pnpm type-check:*)"
+    ]
+  }
+}

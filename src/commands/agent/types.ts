@@ -71,6 +71,7 @@ export type AgentCommandOpts = {
   abortSignal?: AbortSignal;
   lane?: string;
   runId?: string;
+  turnId?: string;
   extraSystemPrompt?: string;
   /** Per-call stream param overrides (best-effort). */
   streamParams?: AgentStreamParams;

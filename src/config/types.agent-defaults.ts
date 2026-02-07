@@ -237,6 +237,11 @@ export type AgentDefaultsConfig = {
     /** Auto-prune sandbox containers. */
     prune?: SandboxPruneSettings;
   };
+  /** Tool configuration defaults. */
+  tools?: {
+    /** Knowledge base configuration. */
+    knowledgeBase?: import("./types.tools.js").KnowledgeBaseConfig;
+  };
 };
 
 export type AgentCompactionMode = "default" | "safeguard";

@@ -379,6 +379,7 @@ export const handleSubagentsCommand: CommandHandler = async (params, allowTextCo
           deliver: false,
           channel: INTERNAL_MESSAGE_CHANNEL,
           lane: AGENT_LANE_SUBAGENT,
+          turnId: params.turnId,
         },
         timeoutMs: 10_000,
       });

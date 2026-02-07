@@ -81,6 +81,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       lane?: string;
       extraSystemPrompt?: string;
       idempotencyKey: string;
+      turnId?: string;
       timeout?: number;
       label?: string;
       spawnedBy?: string;
@@ -292,7 +293,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         });
         bestEffortDeliver = true;
       }
-      registerAgentRunContext(idem, { sessionKey: requestedSessionKey });
+      registerAgentRunContext(idem, { sessionKey: requestedSessionKey, turnId: request.turnId });
     }
 
     const runId = idem;
@@ -381,6 +382,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         bestEffortDeliver,
         messageChannel: resolvedChannel,
         runId,
+        turnId: request.turnId,
         lane: request.lane,
         extraSystemPrompt: request.extraSystemPrompt,
       },

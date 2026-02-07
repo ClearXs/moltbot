@@ -55,6 +55,7 @@ export const NodeInvokeParamsSchema = Type.Object(
     params: Type.Optional(Type.Unknown()),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     idempotencyKey: NonEmptyString,
+    turnId: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
 );

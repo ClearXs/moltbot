@@ -93,6 +93,7 @@ const NodesToolSchema = Type.Object({
 export function createNodesTool(options?: {
   agentSessionKey?: string;
   config?: OpenClawConfig;
+  turnId?: string;
 }): AnyAgentTool {
   const sessionKey = options?.agentSessionKey?.trim() || undefined;
   const agentId = resolveSessionAgentId({
@@ -164,6 +165,7 @@ export function createNodesTool(options?: {
                 delivery: typeof params.delivery === "string" ? params.delivery : undefined,
               },
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             return jsonResult({ ok: true });
           }
@@ -213,6 +215,7 @@ export function createNodesTool(options?: {
                   deviceId,
                 },
                 idempotencyKey: crypto.randomUUID(),
+                turnId: options?.turnId,
               });
               const payload = parseCameraSnapPayload(raw?.payload);
               const normalizedFormat = payload.format.toLowerCase();
@@ -257,6 +260,7 @@ export function createNodesTool(options?: {
               command: "camera.list",
               params: {},
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             const payload =
               raw && typeof raw.payload === "object" && raw.payload !== null ? raw.payload : {};
@@ -293,6 +297,7 @@ export function createNodesTool(options?: {
                 deviceId,
               },
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             const payload = parseCameraClipPayload(raw?.payload);
             const filePath = cameraTempPath({
@@ -339,6 +344,7 @@ export function createNodesTool(options?: {
                 includeAudio,
               },
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             const payload = parseScreenRecordPayload(raw?.payload);
             const filePath =
@@ -384,6 +390,7 @@ export function createNodesTool(options?: {
                 timeoutMs: locationTimeoutMs,
               },
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             return jsonResult(raw?.payload ?? {});
           }
@@ -439,6 +446,7 @@ export function createNodesTool(options?: {
               },
               timeoutMs: invokeTimeoutMs,
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             return jsonResult(raw?.payload ?? {});
           }
@@ -466,6 +474,7 @@ export function createNodesTool(options?: {
               params: invokeParams,
               timeoutMs: invokeTimeoutMs,
               idempotencyKey: crypto.randomUUID(),
+              turnId: options?.turnId,
             });
             return jsonResult(raw ?? {});
           }

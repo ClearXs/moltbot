@@ -18,6 +18,7 @@ export type AnnounceQueueItem = {
   summaryLine?: string;
   enqueuedAt: number;
   sessionKey: string;
+  turnId?: string;
   origin?: DeliveryContext;
   originKey?: string;
 };

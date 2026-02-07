@@ -114,10 +114,12 @@ export function createFollowupRunner(params: {
   return async (queued: FollowupRun) => {
     try {
       const runId = crypto.randomUUID();
+      const turnId = crypto.randomUUID();
       if (queued.run.sessionKey) {
         registerAgentRunContext(runId, {
           sessionKey: queued.run.sessionKey,
           verboseLevel: queued.run.verboseLevel,
+          turnId,
         });
       }
       let autoCompactionCompleted = false;
@@ -170,6 +172,7 @@ export function createFollowupRunner(params: {
               bashElevated: queued.run.bashElevated,
               timeoutMs: queued.run.timeoutMs,
               runId,
+              turnId,
               blockReplyBreak: queued.run.blockReplyBreak,
               onAgentEvent: (evt) => {
                 if (evt.stream !== "compaction") {

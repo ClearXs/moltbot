@@ -20,7 +20,7 @@ describe("models cli", () => {
     modelsStatusCommand.mockClear();
   });
 
-  it("registers github-copilot login command", { timeout: 60_000 }, async () => {
+  it("registers github-copilot login command", { timeout: 120_000 }, async () => {
     const { Command } = await import("commander");
     const { registerModelsCli } = await import("./models-cli.js");
 

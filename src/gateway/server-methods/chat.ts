@@ -153,12 +153,14 @@ function nextChatSeq(context: { agentRunSeq: Map<string, number> }, runId: strin
 function broadcastChatFinal(params: {
   context: Pick<GatewayRequestContext, "broadcast" | "nodeSendToSession" | "agentRunSeq">;
   runId: string;
+  turnId?: string;
   sessionKey: string;
   message?: Record<string, unknown>;
 }) {
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
   const payload = {
     runId: params.runId,
+    turnId: params.turnId,
     sessionKey: params.sessionKey,
     seq,
     state: "final" as const,
@@ -171,12 +173,14 @@ function broadcastChatFinal(params: {
 function broadcastChatError(params: {
   context: Pick<GatewayRequestContext, "broadcast" | "nodeSendToSession" | "agentRunSeq">;
   runId: string;
+  turnId?: string;
   sessionKey: string;
   errorMessage?: string;
 }) {
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
   const payload = {
     runId: params.runId,
+    turnId: params.turnId,
     sessionKey: params.sessionKey,
     seq,
     state: "error" as const,
@@ -375,6 +379,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     });
     const now = Date.now();
     const clientRunId = p.idempotencyKey;
+    const turnId = randomUUID();
 
     const sendPolicy = resolveSendPolicy({
       cfg,
@@ -505,6 +510,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         dispatcher,
         replyOptions: {
           runId: clientRunId,
+          turnId,
           abortSignal: abortController.signal,
           images: parsedImages.length > 0 ? parsedImages : undefined,
           disableBlockStreaming: true,
@@ -558,6 +564,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             broadcastChatFinal({
               context,
               runId: clientRunId,
+              turnId,
               sessionKey: p.sessionKey,
               message,
             });
@@ -583,6 +590,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           broadcastChatError({
             context,
             runId: clientRunId,
+            turnId,
             sessionKey: p.sessionKey,
             errorMessage: String(err),
           });

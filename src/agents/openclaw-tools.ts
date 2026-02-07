@@ -9,6 +9,12 @@ import { createCanvasTool } from "./tools/canvas-tool.js";
 import { createCronTool } from "./tools/cron-tool.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
+import {
+  createKnowledgeListTool,
+  createKnowledgeSearchTool,
+  createKnowledgeDeleteTool,
+  createKnowledgeGetTool,
+} from "./tools/knowledge-tools.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
@@ -53,6 +59,8 @@ export function createOpenClawTools(options?: {
   modelHasVision?: boolean;
   /** Explicit agent ID override for cron/hook sessions. */
   requesterAgentIdOverride?: string;
+  /** Turn id for grouping related runs triggered by a single user message. */
+  turnId?: string;
 }): AnyAgentTool[] {
   const imageTool = options?.agentDir?.trim()
     ? createImageTool({
@@ -74,11 +82,13 @@ export function createOpenClawTools(options?: {
     createBrowserTool({
       sandboxBridgeUrl: options?.sandboxBrowserBridgeUrl,
       allowHostControl: options?.allowHostBrowserControl,
+      turnId: options?.turnId,
     }),
-    createCanvasTool(),
+    createCanvasTool({ turnId: options?.turnId }),
     createNodesTool({
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,
+      turnId: options?.turnId,
     }),
     createCronTool({
       agentSessionKey: options?.agentSessionKey,
@@ -118,6 +128,7 @@ export function createOpenClawTools(options?: {
       agentSessionKey: options?.agentSessionKey,
       agentChannel: options?.agentChannel,
       sandboxed: options?.sandboxed,
+      turnId: options?.turnId,
     }),
     createSessionsSpawnTool({
       agentSessionKey: options?.agentSessionKey,
@@ -130,6 +141,7 @@ export function createOpenClawTools(options?: {
       agentGroupSpace: options?.agentGroupSpace,
       sandboxed: options?.sandboxed,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
+      turnId: options?.turnId,
     }),
     createSessionStatusTool({
       agentSessionKey: options?.agentSessionKey,
@@ -138,6 +150,18 @@ export function createOpenClawTools(options?: {
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
     ...(imageTool ? [imageTool] : []),
+  ];
+
+  // Add knowledge base tools
+  const agentId = resolveSessionAgentId({
+    sessionKey: options?.agentSessionKey,
+    config: options?.config,
+  });
+  const knowledgeTools: AnyAgentTool[] = [
+    createKnowledgeListTool({ agentId }),
+    createKnowledgeSearchTool({ agentId }),
+    createKnowledgeGetTool({ agentId }),
+    createKnowledgeDeleteTool({ agentId }),
   ];
 
   const pluginTools = resolvePluginTools({
@@ -158,5 +182,5 @@ export function createOpenClawTools(options?: {
     toolAllowlist: options?.pluginToolAllowlist,
   });
 
-  return [...tools, ...pluginTools];
+  return [...tools, ...knowledgeTools, ...pluginTools];
 }

@@ -1,27 +1,43 @@
-import type { AddressInfo } from "node:net";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk";
-import { createServer } from "node:http";
+import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import type { ResolvedZaloAccount } from "./types.js";
 import { handleZaloWebhookRequest, registerZaloWebhookTarget } from "./monitor.js";
 
-async function withServer(
-  handler: Parameters<typeof createServer>[0],
-  fn: (baseUrl: string) => Promise<void>,
-) {
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", () => resolve());
-  });
-  const address = server.address() as AddressInfo | null;
-  if (!address) {
-    throw new Error("missing server address");
+function createMockReqRes(params: {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+}) {
+  const req = Readable.from([params.body]) as IncomingMessage;
+  req.url = params.url;
+  req.method = params.method;
+  req.headers = params.headers;
+
+  class MockResponse extends EventEmitter {
+    statusCode = 200;
+    headers: Record<string, string> = {};
+    body = "";
+
+    setHeader(name: string, value: string) {
+      this.headers[name.toLowerCase()] = value;
+    }
+
+    end(chunk?: unknown) {
+      if (chunk !== undefined && typeof chunk === "string") {
+        this.body += chunk;
+      } else if (chunk !== undefined) {
+        this.body += JSON.stringify(chunk);
+      }
+      this.emit("finish");
+    }
   }
-  try {
-    await fn(`http://127.0.0.1:${address.port}`);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+
+  const res = new MockResponse() as unknown as ServerResponse;
+  return { req, res };
 }
 
 describe("handleZaloWebhookRequest", () => {
@@ -46,26 +62,22 @@ describe("handleZaloWebhookRequest", () => {
     });
 
     try {
-      await withServer(
-        async (req, res) => {
-          const handled = await handleZaloWebhookRequest(req, res);
-          if (!handled) {
-            res.statusCode = 404;
-            res.end("not found");
-          }
+      const { req, res } = createMockReqRes({
+        url: "/hook",
+        method: "POST",
+        headers: {
+          "x-bot-api-secret-token": "secret",
         },
-        async (baseUrl) => {
-          const response = await fetch(`${baseUrl}/hook`, {
-            method: "POST",
-            headers: {
-              "x-bot-api-secret-token": "secret",
-            },
-            body: "null",
-          });
+        body: "null",
+      });
 
-          expect(response.status).toBe(400);
-        },
-      );
+      const handled = await handleZaloWebhookRequest(req, res);
+      if (!handled) {
+        res.statusCode = 404;
+        res.end("not found");
+      }
+
+      expect(res.statusCode).toBe(400);
     } finally {
       unregister();
     }

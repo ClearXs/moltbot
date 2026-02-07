@@ -70,6 +70,7 @@ export type RunEmbeddedPiAgentParams = {
   bashElevated?: ExecElevatedDefaults;
   timeoutMs: number;
   runId: string;
+  turnId?: string;
   abortSignal?: AbortSignal;
   shouldEmitToolResult?: () => boolean;
   shouldEmitToolOutput?: () => boolean;

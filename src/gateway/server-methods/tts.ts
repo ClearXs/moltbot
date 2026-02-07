@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import type { GatewayRequestHandlers } from "./types.js";
 import { loadConfig } from "../../config/config.js";
 import {
@@ -81,8 +82,19 @@ export const ttsHandlers: GatewayRequestHandlers = {
       const channel = typeof params.channel === "string" ? params.channel.trim() : undefined;
       const result = await textToSpeech({ text, cfg, channel });
       if (result.success && result.audioPath) {
+        let audioBase64: string | undefined;
+        try {
+          const stat = await fs.stat(result.audioPath);
+          if (stat.isFile() && stat.size <= 50 * 1024 * 1024) {
+            const buffer = await fs.readFile(result.audioPath);
+            audioBase64 = buffer.toString("base64");
+          }
+        } catch {
+          audioBase64 = undefined;
+        }
         respond(true, {
           audioPath: result.audioPath,
+          audioBase64,
           provider: result.provider,
           outputFormat: result.outputFormat,
           voiceCompatible: result.voiceCompatible,

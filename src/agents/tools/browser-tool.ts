@@ -121,6 +121,7 @@ async function callBrowserProxy(params: {
   body?: unknown;
   timeoutMs?: number;
   profile?: string;
+  turnId?: string;
 }): Promise<BrowserProxyResult> {
   const gatewayTimeoutMs =
     typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
@@ -141,6 +142,7 @@ async function callBrowserProxy(params: {
         profile: params.profile,
       },
       idempotencyKey: crypto.randomUUID(),
+      turnId: params.turnId,
     },
   );
   const parsed =
@@ -220,10 +222,12 @@ function resolveBrowserBaseUrl(params: {
 export function createBrowserTool(opts?: {
   sandboxBridgeUrl?: string;
   allowHostControl?: boolean;
+  turnId?: string;
 }): AnyAgentTool {
   const targetDefault = opts?.sandboxBridgeUrl ? "sandbox" : "host";
   const hostHint =
     opts?.allowHostControl === false ? "Host target blocked by policy." : "Host target allowed.";
+  const turnId = opts?.turnId;
   return {
     label: "Browser",
     name: "browser",
@@ -288,6 +292,7 @@ export function createBrowserTool(opts?: {
               body: opts.body,
               timeoutMs: opts.timeoutMs,
               profile: opts.profile,
+              turnId,
             });
             const mapping = await persistProxyFiles(proxy.files);
             applyProxyPaths(proxy.result, mapping);

@@ -48,7 +48,7 @@ const CanvasToolSchema = Type.Object({
   jsonlPath: Type.Optional(Type.String()),
 });
 
-export function createCanvasTool(): AnyAgentTool {
+export function createCanvasTool(options?: { turnId?: string }): AnyAgentTool {
   return {
     label: "Canvas",
     name: "canvas",
@@ -76,6 +76,7 @@ export function createCanvasTool(): AnyAgentTool {
           command,
           params: invokeParams,
           idempotencyKey: crypto.randomUUID(),
+          turnId: options?.turnId,
         });
 
       switch (action) {

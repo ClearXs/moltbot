@@ -38,6 +38,7 @@ export function createSessionsSendTool(opts?: {
   agentSessionKey?: string;
   agentChannel?: GatewayMessageChannel;
   sandboxed?: boolean;
+  turnId?: string;
 }): AnyAgentTool {
   return {
     label: "Session Send",
@@ -260,6 +261,7 @@ export function createSessionsSendTool(opts?: {
         channel: INTERNAL_MESSAGE_CHANNEL,
         lane: AGENT_LANE_NESTED,
         extraSystemPrompt: agentMessageContext,
+        turnId: opts?.turnId,
       };
       const requesterSessionKey = opts?.agentSessionKey;
       const requesterChannel = opts?.agentChannel;
@@ -276,6 +278,7 @@ export function createSessionsSendTool(opts?: {
           requesterChannel,
           roundOneReply,
           waitRunId,
+          turnId: opts?.turnId,
         });
       };
 

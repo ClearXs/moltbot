@@ -75,6 +75,7 @@ export function createSessionsSpawnTool(opts?: {
   agentGroupChannel?: string | null;
   agentGroupSpace?: string | null;
   sandboxed?: boolean;
+  turnId?: string;
   /** Explicit agent ID override for cron/hook sessions where session key parsing may not work. */
   requesterAgentIdOverride?: string;
 }): AnyAgentTool {
@@ -242,6 +243,7 @@ export function createSessionsSpawnTool(opts?: {
             groupId: opts?.agentGroupId ?? undefined,
             groupChannel: opts?.agentGroupChannel ?? undefined,
             groupSpace: opts?.agentGroupSpace ?? undefined,
+            turnId: opts?.turnId,
           },
           timeoutMs: 10_000,
         });
@@ -263,6 +265,7 @@ export function createSessionsSpawnTool(opts?: {
         runId: childRunId,
         childSessionKey,
         requesterSessionKey: requesterInternalKey,
+        turnId: opts?.turnId,
         requesterOrigin,
         requesterDisplayKey,
         task,

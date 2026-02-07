@@ -180,6 +180,7 @@ export async function handleInlineActions(params: {
         agentDir,
         workspaceDir,
         config: cfg,
+        turnId: opts?.turnId,
       });
 
       const tool = tools.find((candidate) => candidate.name === dispatch.toolName);
@@ -307,6 +308,7 @@ export async function handleInlineActions(params: {
       contextTokens,
       isGroup,
       skillCommands,
+      turnId: opts?.turnId,
     });
     if (inlineResult.reply) {
       if (!inlineCommand.cleaned) {
@@ -370,6 +372,7 @@ export async function handleInlineActions(params: {
     contextTokens,
     isGroup,
     skillCommands,
+    turnId: opts?.turnId,
   });
   if (!commandResult.shouldContinue) {
     typing.cleanup();

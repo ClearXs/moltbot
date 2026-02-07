@@ -219,13 +219,15 @@ export type AgentToolsConfig = {
       deny?: string[];
     };
   };
+  /** Knowledge base configuration for this agent. */
+  knowledgeBase?: KnowledgeBaseConfig;
 };
 
 export type MemorySearchConfig = {
   /** Enable vector memory search (default: true). */
   enabled?: boolean;
   /** Sources to index and search (default: ["memory"]). */
-  sources?: Array<"memory" | "sessions">;
+  sources?: Array<"memory" | "sessions" | "knowledge">;
   /** Extra paths to include in memory search (directories or .md files). */
   extraPaths?: string[];
   /** Experimental memory search settings. */
@@ -323,6 +325,83 @@ export type MemorySearchConfig = {
   };
 };
 
+export type KnowledgeBaseConfig = {
+  /** Enable knowledge base functionality (default: false). */
+  enabled?: boolean;
+  /** Vectorization settings for knowledge documents. */
+  vectorization?: {
+    /** Enable knowledge vector indexing (default: follows search.includeInMemorySearch). */
+    enabled?: boolean;
+    /** Embedding provider override for knowledge indexing. */
+    provider?: "openai" | "gemini" | "local" | "auto";
+    /** Embedding model override for knowledge indexing. */
+    model?: string;
+  };
+  /** Knowledge graph extraction settings. */
+  graph?: {
+    /** Enable graph extraction (default: false). */
+    enabled?: boolean;
+    /** Extractor type (default: llm). */
+    extractor?: "llm";
+    /** Provider override for graph extractor LLM. */
+    provider?: string;
+    /** Model override for graph extractor LLM. */
+    model?: string;
+    /** Minimum triples to extract. */
+    minTriples?: number;
+    /** Maximum triples to extract. */
+    maxTriples?: number;
+    /** Triples per 1k tokens (approx). */
+    triplesPerKTokens?: number;
+    /** Default max hop depth when querying subgraphs. */
+    maxDepth?: number;
+  };
+  /** Storage configuration. */
+  storage?: {
+    /** Maximum file size in bytes (default: 10MB). */
+    maxFileSize?: number;
+    /** Maximum number of documents per agent (default: 1000). */
+    maxDocuments?: number;
+  };
+  /** Supported document formats. */
+  formats?: {
+    pdf?: {
+      /** Enable PDF processing (default: true). */
+      enabled?: boolean;
+      /** Maximum pages to process (default: unlimited). */
+      maxPages?: number;
+    };
+    docx?: {
+      /** Enable DOCX processing (default: true). */
+      enabled?: boolean;
+    };
+    txt?: {
+      /** Enable plain text processing (default: true). */
+      enabled?: boolean;
+    };
+    html?: {
+      /** Enable HTML processing (default: true). */
+      enabled?: boolean;
+    };
+  };
+  /** Upload channel configuration. */
+  upload?: {
+    /** Enable Web API upload (default: true). */
+    webApi?: boolean;
+    /** Enable chat attachment upload (default: true). */
+    chatAttachments?: boolean;
+    /** Allowed messaging channels for attachment upload (default: all). */
+    allowedChannels?: string[];
+  };
+  /** Search integration settings. */
+  search?: {
+    /** Auto-index documents after upload (default: true). */
+    autoIndex?: boolean;
+    /** Include knowledge base results in memory_search (default: false). */
+    includeInMemorySearch?: boolean;
+  };
+};
+
 export type ToolsConfig = {
   /** Base tool profile applied before allow/deny lists. */
   profile?: ToolProfileId;
@@ -332,6 +411,8 @@ export type ToolsConfig = {
   deny?: string[];
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
+  /** Knowledge base management configuration. */
+  knowledgeBase?: KnowledgeBaseConfig;
   web?: {
     search?: {
       /** Enable web search tool (default: true when API key is present). */

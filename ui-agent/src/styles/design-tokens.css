@@ -1,0 +1,414 @@
+/**
+ * 设计令牌 - Bid Agent 企业运营助手
+ * Design Tokens for Enterprise Operation Assistant
+ *
+ * 基于Manus风格的浅色主题设计系统 - 支持多主题切换
+ * Light theme design system inspired by Manus - Multi-theme support
+ */
+
+/* ==================== 通用变量 / Common Variables ==================== */
+:root {
+  /* ==================== 阴影 / Shadows ==================== */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* ==================== 间距系统 / Spacing System ==================== */
+  --spacing-xs: 4px; /* 0.25rem */
+  --spacing-sm: 8px; /* 0.5rem */
+  --spacing-md: 12px; /* 0.75rem */
+  --spacing-lg: 16px; /* 1rem */
+  --spacing-xl: 20px; /* 1.25rem */
+  --spacing-2xl: 24px; /* 1.5rem */
+  --spacing-3xl: 32px; /* 2rem */
+  --spacing-4xl: 40px; /* 2.5rem */
+
+  /* ==================== 圆角 / Border Radius ==================== */
+  --radius-sm: 4px; /* 小圆角 - Small radius */
+  --radius-md: 8px; /* 中圆角 - Medium radius */
+  --radius-lg: 12px; /* 大圆角 - Large radius */
+  --radius-xl: 16px; /* 超大圆角 - Extra large radius */
+  --radius-full: 9999px; /* 全圆 - Full circle */
+
+  /* ==================== 字体 / Typography ==================== */
+  /* 字体家族 - Font families */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica,
+    "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-mono: "JetBrains Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace;
+
+  /* 字号 - Font sizes (增大1px以提升可读性) */
+  --text-xs: 13px; /* 辅助信息、时间戳 */
+  --text-sm: 15px; /* 正文、列表项 */
+  --text-base: 17px; /* 标准文字 */
+  --text-lg: 19px; /* 小标题 */
+  --text-xl: 22px; /* 标题 */
+  --text-2xl: 26px; /* 大标题 */
+  --text-3xl: 32px; /* 超大标题 */
+
+  /* 行高 - Line heights */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  /* 字重 - Font weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* ==================== 过渡动画 / Transitions ==================== */
+  --transition-fast: 150ms;
+  --transition-base: 200ms;
+  --transition-slow: 300ms;
+
+  /* 缓动函数 - Easing functions */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* ==================== Z-Index 层级 / Z-Index Layers ==================== */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal-backdrop: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+
+  /* ==================== 组件特定 / Component Specific ==================== */
+  /* Sidebar */
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 60px;
+  --sidebar-transition: width var(--transition-base) var(--ease-in-out);
+
+  /* Input */
+  --input-height: 40px;
+  --input-border-width: 1px;
+  --input-focus-ring: 0 0 0 3px var(--primary-light);
+}
+
+/* ==================== 主题1: 经典绿 - 专业稳重 · 商务首选 ==================== */
+:root[data-theme="default"],
+:root {
+  /* 品牌色 / Brand Colors - 青绿色系 */
+  --primary: #10a37f; /* 经典青绿 */
+  --primary-hover: #0d8a6a; /* 悬停态 */
+  --primary-light: #e6f7f3; /* 淡背景 */
+  --primary-dark: #0a7d63; /* 深色变体 */
+
+  /* 次要色 - 翡翠绿 (更鲜艳) */
+  --secondary: #34d399;
+  --secondary-light: #d1fae5;
+
+  /* 强调色 - 琥珀金 */
+  --accent: #fbbf24;
+  --accent-light: #fef3c7;
+
+  /* 中性色 / Neutral Colors - 清爽简约 */
+  --background: #ffffff;
+  --background-secondary: #fafafa; /* 极浅灰 - 更接近纯白 */
+  --background-tertiary: #ffffff;
+  --sidebar-background: #fafafa; /* 统一使用极浅灰 */
+  --surface: #ffffff;
+  --surface-hover: #f7f7f7; /* 悬停态略深 */
+
+  /* 边框 / Borders - 更细腻 */
+  --border-light: #f5f5f5; /* 几乎不可见的边框 */
+  --border: #e8e8e8; /* 主边框 - 更浅 */
+  --border-dark: #d4d4d4; /* 深色边框 - 更柔和 */
+
+  /* 文字颜色 / Text Colors - 更柔和 */
+  --text-primary: #171717; /* 主文字 - 极深灰 */
+  --text-secondary: #737373; /* 次级文字 - 中灰 */
+  --text-tertiary: #a3a3a3; /* 辅助文字 - 浅灰 */
+  --text-disabled: #d4d4d4; /* 禁用文字 */
+
+  /* 状态色 / Status Colors */
+  --success: #34d399; /* 使用翡翠绿 */
+  --success-light: #d1fae5;
+  --warning: #fbbf24; /* 使用琥珀金 */
+  --warning-light: #fef3c7;
+  --error: #ef4444;
+  --error-light: #fee2e2;
+  --info: #3b82f6;
+  --info-light: #dbeafe;
+}
+
+/* ==================== 主题2: 海洋蓝 - 清新冷静 · 科技感 ==================== */
+:root[data-theme="material-teal"] {
+  /* 品牌色 / Brand Colors - 天蓝色系 */
+  --primary: #0ea5e9; /* 天蓝色 Sky Blue */
+  --primary-dark: #0284c7; /* 深蓝 */
+  --primary-light: #bae6fd; /* 淡蓝 */
+  --primary-hover: #0284c7; /* 悬停态 */
+
+  /* 次要色 - 浅蓝 */
+  --secondary: #38bdf8;
+  --secondary-light: #e0f2fe;
+
+  /* 强调色 - 活力橙 */
+  --accent: #f97316;
+  --accent-light: #ffedd5;
+
+  /* 中性色 / Neutral Colors - 清爽简约 */
+  --background: #ffffff;
+  --background-secondary: #fafafa; /* 极浅灰 - 更接近纯白 */
+  --background-tertiary: #ffffff;
+  --sidebar-background: #fafafa; /* 统一使用极浅灰 */
+  --surface: #ffffff;
+  --surface-hover: #f7f7f7; /* 悬停态略深 */
+
+  /* 边框 / Borders - 更细腻 */
+  --border-light: #f5f5f5; /* 几乎不可见的边框 */
+  --border: #e8e8e8; /* 主边框 - 更浅 */
+  --border-dark: #d4d4d4; /* 深色边框 - 更柔和 */
+
+  /* 文字颜色 / Text Colors - 更柔和 */
+  --text-primary: #171717; /* 主文字 - 极深灰 */
+  --text-secondary: #737373; /* 次级文字 - 中灰 */
+  --text-tertiary: #a3a3a3; /* 辅助文字 - 浅灰 */
+  --text-disabled: #d4d4d4; /* 禁用文字 */
+
+  /* 状态色 / Status Colors */
+  --success: #38bdf8; /* 使用浅蓝 */
+  --success-light: #e0f2fe;
+  --warning: #f97316; /* 使用活力橙 */
+  --warning-light: #ffedd5;
+  --error: #ef4444;
+  --error-light: #fee2e2;
+  --info: #0ea5e9; /* 使用天蓝色 */
+  --info-light: #bae6fd;
+}
+
+/* ==================== 主题3: 紫罗兰 - 优雅高贵 · 创意灵感 ==================== */
+:root[data-theme="warm-green"] {
+  /* 品牌色 / Brand Colors - 紫色系 */
+  --primary: #8b5cf6; /* 紫色 Violet */
+  --primary-dark: #7c3aed; /* 深紫 */
+  --primary-light: #ddd6fe; /* 淡紫 */
+  --primary-hover: #7c3aed; /* 悬停态 */
+
+  /* 次要色 - 淡紫 */
+  --secondary: #a78bfa;
+  --secondary-light: #ede9fe;
+
+  /* 强调色 - 粉红 */
+  --accent: #ec4899;
+  --accent-light: #fce7f3;
+
+  /* 中性色 / Neutral Colors - 清爽简约 */
+  --background: #ffffff;
+  --background-secondary: #fafafa; /* 极浅灰 - 更接近纯白 */
+  --background-tertiary: #ffffff;
+  --sidebar-background: #fafafa; /* 统一使用极浅灰 */
+  --surface: #ffffff;
+  --surface-hover: #f7f7f7; /* 悬停态略深 */
+
+  /* 边框 / Borders - 更细腻 */
+  --border-light: #f5f5f5; /* 几乎不可见的边框 */
+  --border: #e8e8e8; /* 主边框 - 更浅 */
+  --border-dark: #d4d4d4; /* 深色边框 - 更柔和 */
+
+  /* 文字颜色 / Text Colors - 更柔和 */
+  --text-primary: #171717; /* 主文字 - 极深灰 */
+  --text-secondary: #737373; /* 次级文字 - 中灰 */
+  --text-tertiary: #a3a3a3; /* 辅助文字 - 浅灰 */
+  --text-disabled: #d4d4d4; /* 禁用文字 */
+
+  /* 状态色 / Status Colors */
+  --success: #a78bfa; /* 使用淡紫 */
+  --success-light: #ede9fe;
+  --warning: #ec4899; /* 使用粉红 */
+  --warning-light: #fce7f3;
+  --error: #ef4444;
+  --error-light: #fee2e2;
+  --info: #8b5cf6; /* 使用紫色 */
+  --info-light: #ddd6fe;
+}
+
+/* ==================== 主题4: 活力橙 - 热情洋溢 · 充满能量 ==================== */
+:root[data-theme="vibrant-multi"] {
+  /* 品牌色 / Brand Colors - 橙色系 */
+  --primary: #f97316; /* 橙色 Orange */
+  --primary-dark: #ea580c; /* 深橙 */
+  --primary-light: #fed7aa; /* 淡橙 */
+  --primary-hover: #ea580c; /* 悬停态 */
+
+  /* 次要色 - 珊瑚橙 */
+  --secondary: #fb923c;
+  --secondary-light: #ffedd5;
+
+  /* 强调色 - 金色 */
+  --accent: #fbbf24;
+  --accent-light: #fef3c7;
+
+  /* 中性色 / Neutral Colors - 清爽简约 */
+  --background: #ffffff;
+  --background-secondary: #fafafa; /* 极浅灰 - 更接近纯白 */
+  --background-tertiary: #ffffff;
+  --sidebar-background: #fafafa; /* 统一使用极浅灰 */
+  --surface: #ffffff;
+  --surface-hover: #f7f7f7; /* 悬停态略深 */
+
+  /* 边框 / Borders - 更细腻 */
+  --border-light: #f5f5f5; /* 几乎不可见的边框 */
+  --border: #e8e8e8; /* 主边框 - 更浅 */
+  --border-dark: #d4d4d4; /* 深色边框 - 更柔和 */
+
+  /* 文字颜色 / Text Colors - 更柔和 */
+  --text-primary: #171717; /* 主文字 - 极深灰 */
+  --text-secondary: #737373; /* 次级文字 - 中灰 */
+  --text-tertiary: #a3a3a3; /* 辅助文字 - 浅灰 */
+  --text-disabled: #d4d4d4; /* 禁用文字 */
+
+  /* 状态色 / Status Colors */
+  --success: #fb923c; /* 使用珊瑚橙 */
+  --success-light: #ffedd5;
+  --warning: #fbbf24; /* 使用金色 */
+  --warning-light: #fef3c7;
+  --error: #ef4444;
+  --error-light: #fee2e2;
+  --info: #f97316; /* 使用橙色 */
+  --info-light: #fed7aa;
+}
+
+/* ==================== 主题5: 灰白简约 - 极简主义 · 高端内敛 ==================== */
+:root[data-theme="gray-minimal"] {
+  /* 品牌色 / Brand Colors - 灰色系 */
+  --primary: #6b7280; /* 中灰 Gray 500 */
+  --primary-dark: #4b5563; /* 深灰 Gray 600 */
+  --primary-light: #e5e7eb; /* 极浅灰 Gray 200 */
+  --primary-hover: #4b5563; /* 悬停态 */
+
+  /* 次要色 - 浅灰 */
+  --secondary: #9ca3af; /* 浅灰 Gray 400 */
+  --secondary-light: #f3f4f6; /* 极浅灰 Gray 100 */
+
+  /* 强调色 - 暖灰 */
+  --accent: #d1d5db; /* 暖浅灰 Gray 300 */
+  --accent-light: #f9fafb; /* 几乎白色 Gray 50 */
+
+  /* 中性色 / Neutral Colors - 极简纯净 */
+  --background: #ffffff;
+  --background-secondary: #fafafa; /* 极浅灰 - 更接近纯白 */
+  --background-tertiary: #f5f5f5; /* 稍深一点的背景 */
+  --sidebar-background: #f9fafb; /* 几乎纯白 */
+  --surface: #ffffff;
+  --surface-hover: #f5f5f5; /* 悬停态 */
+
+  /* 边框 / Borders - 极细腻 */
+  --border-light: #f3f4f6; /* 几乎不可见 */
+  --border: #e5e7eb; /* 主边框 - 非常浅 */
+  --border-dark: #d1d5db; /* 深色边框 - 柔和 */
+
+  /* 文字颜色 / Text Colors - 灰度层次 */
+  --text-primary: #111827; /* 主文字 - 极深灰 Gray 900 */
+  --text-secondary: #6b7280; /* 次级文字 - 中灰 Gray 500 */
+  --text-tertiary: #9ca3af; /* 辅助文字 - 浅灰 Gray 400 */
+  --text-disabled: #d1d5db; /* 禁用文字 Gray 300 */
+
+  /* 状态色 / Status Colors - 低饱和度 */
+  --success: #6b7280; /* 使用中灰 */
+  --success-light: #f3f4f6;
+  --warning: #9ca3af; /* 使用浅灰 */
+  --warning-light: #f9fafb;
+  --error: #dc2626; /* 低饱和度红色 */
+  --error-light: #fee2e2;
+  --info: #6b7280; /* 使用中灰 */
+  --info-light: #e5e7eb;
+}
+
+/* ==================== 主题6: 黑灰暗色 - 深邃优雅 · 专注护眼 ==================== */
+:root[data-theme="dark-gray"] {
+  /* 品牌色 / Brand Colors - Manus风格 */
+  --primary: #a8a29e; /* 暖灰色 Stone 400 */
+  --primary-dark: #d6d3d1; /* 浅暖灰 Stone 300 */
+  --primary-light: #44403c; /* 深暖灰 Stone 700 */
+  --primary-hover: #d6d3d1; /* 悬停态 */
+
+  /* 次要色 - 暖灰 */
+  --secondary: #78716c; /* 中暖灰 Stone 500 */
+  --secondary-light: #44403c; /* 深暖灰 Stone 700 */
+
+  /* 强调色 - 深暖灰 */
+  --accent: #57534e; /* 深暖灰 Stone 600 */
+  --accent-light: #292524; /* 极深暖灰 Stone 800 */
+
+  /* 中性色 / Neutral Colors - Manus暗色背景 */
+  --background: #1c1917; /* 极深暖灰 Stone 900 */
+  --background-secondary: #292524; /* 深暖灰 Stone 800 */
+  --background-tertiary: #0c0a09; /* 接近黑色 Stone 950 */
+  --sidebar-background: #292524; /* 深暖灰 Stone 800 */
+  --surface: #292524; /* 深暖灰 Stone 800 */
+  --surface-hover: #44403c; /* 悬停态 Stone 700 */
+
+  /* 边框 / Borders - 低对比度 */
+  --border-light: #292524; /* 深暖灰 Stone 800 */
+  --border: #44403c; /* 主边框 Stone 700 */
+  --border-dark: #57534e; /* 深色边框 Stone 600 */
+
+  /* 文字颜色 / Text Colors - 暖色调浅色文字 */
+  --text-primary: #fafaf9; /* 主文字 - 极浅暖灰 Stone 50 */
+  --text-secondary: #d6d3d1; /* 次级文字 - 浅暖灰 Stone 300 */
+  --text-tertiary: #a8a29e; /* 辅助文字 - 中浅暖灰 Stone 400 */
+  --text-disabled: #78716c; /* 禁用文字 Stone 500 */
+
+  /* 状态色 / Status Colors - 暗色适配 */
+  --success: #78716c; /* 使用中暖灰 */
+  --success-light: #44403c;
+  --warning: #a8a29e; /* 使用浅暖灰 */
+  --warning-light: #44403c;
+  --error: #ef4444; /* 红色 Red 500 */
+  --error-light: #7f1d1d; /* 深红 */
+  --info: #a8a29e; /* 使用浅暖灰 */
+  --info-light: #44403c;
+}
+
+/* ==================== 主题7: Manus亮色 - 简约优雅 · 清新舒适 ==================== */
+:root[data-theme="manus-light"] {
+  /* 品牌色 / Brand Colors - Manus亮色风格 */
+  --primary: #34322d; /* 深灰色 */
+  --primary-dark: #1a1a19; /* 极深灰 */
+  --primary-light: #f8f8f7; /* 极浅灰背景 */
+  --primary-hover: #5e5e5b; /* 悬停态 */
+
+  /* 次要色 - 中性灰 */
+  --secondary: #858481; /* 中灰 */
+  --secondary-light: #fafafa; /* 浅背景 */
+
+  /* 强调色 - 蓝色 */
+  --accent: #0081f2; /* 蓝色强调 */
+  --accent-light: #0081f214; /* 淡蓝背景 */
+
+  /* 中性色 / Neutral Colors - Manus亮色背景 */
+  --background: #ffffff; /* 纯白 */
+  --background-secondary: #f8f8f7; /* 极浅灰 */
+  --background-tertiary: #fafafa; /* 浅灰背景 */
+  --sidebar-background: #f8f8f7; /* 极浅灰 */
+  --surface: #ffffff; /* 纯白 */
+  --surface-hover: #fafafa; /* 悬停态 */
+
+  /* 边框 / Borders - 极淡边框 */
+  --border-light: #0000000a; /* 几乎透明 */
+  --border: #0000000f; /* 主边框 */
+  --border-dark: #0000001f; /* 深色边框 */
+
+  /* 文字颜色 / Text Colors - Manus文字 */
+  --text-primary: #34322d; /* 主文字 - 深灰 */
+  --text-secondary: #5e5e5b; /* 次级文字 - 中灰 */
+  --text-tertiary: #858481; /* 辅助文字 - 浅灰 */
+  --text-disabled: #b9b9b7; /* 禁用文字 */
+
+  /* 状态色 / Status Colors - Manus状态色 */
+  --success: #25ba3b; /* 成功绿 */
+  --success-light: #25ba3b14;
+  --warning: #efa201; /* 警告橙 */
+  --warning-light: #efa2011f;
+  --error: #f25a5a; /* 错误红 */
+  --error-light: #f25a5a14;
+  --info: #0081f2; /* 信息蓝 */
+  --info-light: #0081f214;
+}

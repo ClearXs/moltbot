@@ -45,9 +45,10 @@ import { ensureMemoryIndexSchema } from "./memory-schema.js";
 import { loadSqliteVecExtension } from "./sqlite-vec.js";
 import { requireNodeSqlite } from "./sqlite.js";
 
-type MemorySource = "memory" | "sessions";
+type MemorySource = "memory" | "sessions" | "knowledge";
 
 export type MemorySearchResult = {
+  id: string;
   path: string;
   startLine: number;
   endLine: number;
@@ -174,9 +175,13 @@ export class MemoryIndexManager {
   static async get(params: {
     cfg: OpenClawConfig;
     agentId: string;
+    overrides?: {
+      provider?: "openai" | "local" | "gemini" | "auto";
+      model?: string;
+    };
   }): Promise<MemoryIndexManager | null> {
     const { cfg, agentId } = params;
-    const settings = resolveMemorySearchConfig(cfg, agentId);
+    const settings = resolveMemorySearchConfig(cfg, agentId, params.overrides);
     if (!settings) {
       return null;
     }
@@ -2392,5 +2397,61 @@ export class MemoryIndexManager {
            size=excluded.size`,
       )
       .run(entry.path, options.source, entry.hash, entry.mtimeMs, entry.size);
+  }
+
+  /**
+   * Index a knowledge base document with its extracted text
+   */
+  async ingestKnowledgeDocument(params: {
+    documentId: string;
+    filename: string;
+    content: string;
+  }): Promise<void> {
+    const { documentId, filename, content } = params;
+
+    // Create a pseudo file entry for the knowledge document
+    const entry = {
+      path: `knowledge/${documentId}`,
+      absPath: `knowledge/${documentId}`,
+      hash: hashText(content),
+      mtimeMs: Date.now(),
+      size: Buffer.byteLength(content, "utf-8"),
+    };
+
+    // Index using the existing indexFile method
+    await this.indexFile(entry, { source: "knowledge", content });
+
+    log.info(`knowledge: indexed document ${filename} (${documentId})`);
+  }
+
+  /**
+   * Remove a knowledge base document from the index
+   */
+  deleteKnowledgeDocument(documentId: string): void {
+    const path = `knowledge/${documentId}`;
+    const vectorReady = this.vector.enabled && this.vector.available;
+
+    if (vectorReady) {
+      try {
+        this.db
+          .prepare(
+            `DELETE FROM ${VECTOR_TABLE} WHERE id IN (SELECT id FROM chunks WHERE path = ? AND source = 'knowledge')`,
+          )
+          .run(path);
+      } catch {}
+    }
+
+    if (this.fts.enabled && this.fts.available) {
+      try {
+        this.db
+          .prepare(`DELETE FROM ${FTS_TABLE} WHERE path = ? AND source = 'knowledge'`)
+          .run(path);
+      } catch {}
+    }
+
+    this.db.prepare(`DELETE FROM chunks WHERE path = ? AND source = 'knowledge'`).run(path);
+    this.db.prepare(`DELETE FROM files WHERE path = ? AND source = 'knowledge'`).run(path);
+
+    log.info(`knowledge: removed document from index (${documentId})`);
   }
 }

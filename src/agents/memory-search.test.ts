@@ -255,4 +255,27 @@ describe("memory search config", () => {
     const resolved = resolveMemorySearchConfig(cfg, "main");
     expect(resolved?.sources).toContain("sessions");
   });
+
+  it("adds knowledge source when knowledge base opts in", () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          memorySearch: {
+            provider: "openai",
+            sources: ["memory"],
+          },
+          tools: {
+            knowledgeBase: {
+              enabled: true,
+              search: {
+                includeInMemorySearch: true,
+              },
+            },
+          },
+        },
+      },
+    };
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+    expect(resolved?.sources).toContain("knowledge");
+  });
 });

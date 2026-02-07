@@ -85,6 +85,13 @@ const BASE_METHODS = [
   "chat.history",
   "chat.abort",
   "chat.send",
+  // Scene management methods
+  "scenes.list",
+  "scenes.get",
+  "scenes.create",
+  "scenes.update",
+  "scenes.delete",
+  "scenes.setActive",
 ];
 
 export function listGatewayMethods(): string[] {

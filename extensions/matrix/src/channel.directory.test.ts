@@ -1,8 +1,37 @@
 import type { PluginRuntime } from "openclaw/plugin-sdk";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoreConfig } from "./types.js";
-import { matrixPlugin } from "./channel.js";
 import { setMatrixRuntime } from "./runtime.js";
+
+vi.mock("./matrix/send.js", () => ({
+  sendMessageMatrix: vi.fn(),
+  sendPollMatrix: vi.fn(),
+}));
+
+vi.mock("./matrix/probe.js", () => ({
+  probeMatrix: vi.fn(),
+}));
+
+vi.mock("@vector-im/matrix-bot-sdk", () => ({
+  MatrixClient: class {},
+  ConsoleLogger: class {},
+  LogService: {
+    setLogger() {},
+    setLogLevel() {},
+    warn() {},
+    info() {},
+    error() {},
+    debug() {},
+  },
+  AutojoinRoomsMixin: { setupOnClient() {} },
+  SimpleFsStorageProvider: class {},
+  RustSdkCryptoStorageProvider: class {},
+  LogLevel: { INFO: "INFO" },
+}));
+
+vi.mock("@matrix-org/matrix-sdk-crypto-nodejs", () => ({
+  StoreType: { Sqlite: "Sqlite" },
+}));
 
 describe("matrix directory", () => {
   beforeEach(() => {
@@ -14,6 +43,7 @@ describe("matrix directory", () => {
   });
 
   it("lists peers and groups from config", async () => {
+    const { matrixPlugin } = await import("./channel.js");
     const cfg = {
       channels: {
         matrix: {

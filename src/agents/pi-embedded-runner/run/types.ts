@@ -59,6 +59,7 @@ export type EmbeddedRunAttemptParams = {
   bashElevated?: ExecElevatedDefaults;
   timeoutMs: number;
   runId: string;
+  turnId?: string;
   abortSignal?: AbortSignal;
   shouldEmitToolResult?: () => boolean;
   shouldEmitToolOutput?: () => boolean;
