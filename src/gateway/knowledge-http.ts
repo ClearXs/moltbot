@@ -1,9 +1,8 @@
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 import busboy from "busboy";
-import fs from "node:fs";
-import fsPromises from "node:fs/promises";
-import type { KnowledgeBaseEntry } from "../memory/knowledge-schema.js";
 import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
@@ -12,7 +11,9 @@ import {
 import { loadConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { KnowledgeManager } from "../memory/knowledge-manager.js";
+import type { KnowledgeBaseEntry } from "../memory/knowledge-schema.js";
 import { requireNodeSqlite } from "../memory/sqlite.js";
+import { AuthRateLimiter } from "./auth-rate-limit.ts";
 import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
 import {
   readJsonBodyOrError,
@@ -27,6 +28,7 @@ import { formatError } from "./server-utils.js";
 type KnowledgeHttpOptions = {
   auth: ResolvedGatewayAuth;
   trustedProxies?: string[];
+  rateLimiter?: AuthRateLimiter;
 };
 
 const DEFAULT_BODY_BYTES = 512 * 1024;
