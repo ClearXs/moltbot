@@ -17,8 +17,10 @@ import {
   listKnowledgeBases,
   listKnowledgeChunks,
   updateKnowledgeBase,
+  updateKnowledgeMetadata,
   uploadKnowledge,
   getKnowledgeSettings,
+  updateKnowledgeSettings,
 } from "@/services/knowledgeApi";
 
 interface KnowledgeFilters {
@@ -60,6 +62,7 @@ interface KnowledgeBaseState {
   isLoadingChunks: boolean;
   settings: KnowledgeSettingsResponse | null;
   isLoadingSettings: boolean;
+  isUpdatingSettings: boolean;
   searchResults: KnowledgeSearchResult[];
   searchQuery: string;
   targetChunkId: string | null;
@@ -97,12 +100,22 @@ interface KnowledgeBaseState {
   loadChunks: (documentId: string, params?: { offset?: number; limit?: number }) => Promise<void>;
   selectChunk: (chunkId: string | null) => void;
   loadSettings: () => Promise<void>;
+  updateSettings: (params: {
+    vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
+    graph?: Partial<KnowledgeSettingsResponse["graph"]>;
+  }) => Promise<void>;
   setTags: (tags: string[]) => void;
   setSearchResults: (results: KnowledgeSearchResult[], query: string) => void;
   clearSearch: () => void;
   navigateToSearchResult: (result: KnowledgeSearchResult) => Promise<void>;
   clearTargetChunk: () => void;
   uploadDocument: (file: File, description?: string, tags?: string[]) => Promise<void>;
+  updateDocumentMetadata: (params: {
+    documentId: string;
+    filename?: string;
+    description?: string;
+    tags?: string[];
+  }) => Promise<void>;
   deleteDocument: (id: string) => Promise<void>;
 }
 
@@ -141,6 +154,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
   isLoadingChunks: false,
   settings: null,
   isLoadingSettings: false,
+  isUpdatingSettings: false,
   searchResults: [],
   searchQuery: "",
   targetChunkId: null,
@@ -366,6 +380,16 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
     }
   },
 
+  updateSettings: async (params) => {
+    set({ isUpdatingSettings: true });
+    try {
+      const settings = await updateKnowledgeSettings(params);
+      set({ settings });
+    } finally {
+      set({ isUpdatingSettings: false });
+    }
+  },
+
   setTags: (tags) => set({ filters: { tags } }),
 
   setSearchResults: (results, query) => {
@@ -415,6 +439,34 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
     } finally {
       set({ isUploading: false });
     }
+  },
+
+  updateDocumentMetadata: async ({ documentId, filename, description, tags }) => {
+    const kbId = get().activeKbId;
+    if (!kbId) {
+      throw new Error("请先选择知识库");
+    }
+    const updated = await updateKnowledgeMetadata({
+      kbId,
+      documentId,
+      filename,
+      description,
+      tags,
+    });
+    set((state) => ({
+      detail: state.activeDocumentId === documentId ? updated : state.detail,
+      documentsById: state.documentsById[documentId]
+        ? {
+            ...state.documentsById,
+            [documentId]: {
+              ...state.documentsById[documentId],
+              filename: updated.filename,
+              description: updated.description,
+              tags: updated.tags,
+            },
+          }
+        : state.documentsById,
+    }));
   },
 
   deleteDocument: async (id) => {

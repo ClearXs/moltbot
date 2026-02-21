@@ -17,7 +17,6 @@ interface MainLayoutProps {
   onSelectSession?: (key: string) => void;
   onNewSession?: () => void;
   onRenameSession?: (key: string) => void;
-  onResetSession?: (key: string) => void;
   onDeleteSession?: (key: string) => void;
   onViewSession?: (key: string) => void;
   searchQuery?: string;
@@ -34,7 +33,6 @@ interface MainLayoutProps {
   onToggleSelectedKey?: (key: string) => void;
   onSelectAllKeys?: (keys: string[]) => void;
   onClearSelection?: () => void;
-  onBatchReset?: () => void;
   onBatchDelete?: () => void;
   onShare?: () => void;
   onExport?: () => void;
@@ -56,7 +54,6 @@ const MainLayout = ({
   onSelectSession = () => {},
   onNewSession = () => {},
   onRenameSession = () => {},
-  onResetSession = () => {},
   onDeleteSession = () => {},
   onViewSession = () => {},
   searchQuery = "",
@@ -73,7 +70,6 @@ const MainLayout = ({
   onToggleSelectedKey = () => {},
   onSelectAllKeys = () => {},
   onClearSelection = () => {},
-  onBatchReset = () => {},
   onBatchDelete = () => {},
   onShare = () => {},
   onExport = () => {},
@@ -97,7 +93,6 @@ const MainLayout = ({
         onSelectSession={onSelectSession}
         onNewSession={onNewSession}
         onRenameSession={onRenameSession}
-        onResetSession={onResetSession}
         onDeleteSession={onDeleteSession}
         onViewSession={onViewSession}
         searchQuery={searchQuery}
@@ -114,7 +109,6 @@ const MainLayout = ({
         onToggleSelectedKey={onToggleSelectedKey}
         onSelectAllKeys={onSelectAllKeys}
         onClearSelection={onClearSelection}
-        onBatchReset={onBatchReset}
         onBatchDelete={onBatchDelete}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -138,7 +132,7 @@ const MainLayout = ({
         )}
 
         {/* Content area */}
-        <div className="flex-1 overflow-auto">{children}</div>
+        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
       </main>
     </div>
   );

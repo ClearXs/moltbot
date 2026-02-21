@@ -64,6 +64,15 @@ export type UpdateKnowledgeDocumentResult = {
   updatedAt: string;
 };
 
+export type UpdateKnowledgeDocumentMetadataParams = {
+  kbId: string;
+  documentId: string;
+  agentId: string;
+  filename?: string;
+  description?: string | null;
+  tags?: string[];
+};
+
 export type DeleteKnowledgeDocumentResult = {
   success: boolean;
 };
@@ -701,6 +710,45 @@ export class KnowledgeManager {
       size: storeResult.size,
       indexed,
       updatedAt: new Date(storeResult.updatedAt).toISOString(),
+    };
+  }
+
+  updateDocumentMetadata(params: UpdateKnowledgeDocumentMetadataParams): KnowledgeDocumentWithTags {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+    const kbId = this.resolveBaseIdForAgent({
+      agentId: params.agentId,
+      kbId: params.kbId,
+    });
+
+    const doc = this.storage.getDocument(params.documentId);
+    if (!doc) {
+      throw new Error(`Document not found: ${params.documentId}`);
+    }
+    if (doc.owner_agent_id !== params.agentId) {
+      throw new Error("Document does not belong to this agent");
+    }
+    if (doc.kb_id && doc.kb_id !== kbId) {
+      throw new Error("Document does not belong to this knowledge base");
+    }
+
+    this.storage.updateDocumentMetadata({
+      documentId: params.documentId,
+      filename: params.filename,
+      description: params.description,
+      tags: params.tags,
+    });
+
+    const updated = this.storage.getDocument(params.documentId);
+    if (!updated) {
+      throw new Error(`Document not found after update: ${params.documentId}`);
+    }
+
+    return {
+      ...updated,
+      tags: this.storage.getDocumentTags(updated.id),
     };
   }
 

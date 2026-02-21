@@ -29,7 +29,6 @@ type SessionStore = {
   selectSession: (key: string | null) => void;
   createSession: (label?: string) => Promise<string | null>;
   renameSession: (key: string, label: string) => Promise<void>;
-  resetSession: (key: string) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
   markSeen: (key: string) => void;
   getSessionByKey: (key: string) => GatewaySessionRow | undefined;
@@ -263,28 +262,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         }
         return next;
       })(),
-    }));
-  },
-
-  resetSession: async (key) => {
-    const wsClient = useConnectionStore.getState().wsClient;
-    if (!wsClient) return;
-    const result = await wsClient.sendRequest<{ ok: true; entry: { updatedAt?: number } }>(
-      "sessions.reset",
-      { key },
-    );
-    set((state) => ({
-      sessions: state.sessions.map((session) =>
-        session.key === key
-          ? {
-              ...session,
-              updatedAt: result?.entry?.updatedAt ?? Date.now(),
-              inputTokens: 0,
-              outputTokens: 0,
-              totalTokens: 0,
-            }
-          : session,
-      ),
     }));
   },
 

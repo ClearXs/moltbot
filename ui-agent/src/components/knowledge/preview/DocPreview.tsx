@@ -5,10 +5,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Copy, Download, ExternalLink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, ExternalLink, GripHorizontal, RotateCcw, Save } from "lucide-react";
+import Editor from "@monaco-editor/react";
 import type { KnowledgeDetail } from "@/services/knowledgeApi";
 import { buildHeaders, getGatewayBaseUrl } from "@/services/knowledgeApi";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UniverDocPreview } from "./UniverDocPreview";
 import { UniverSheetPreview } from "./UniverSheetPreview";
 
@@ -50,9 +52,36 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfSearch, setPdfSearch] = useState("");
   const [pdfSearchStatus, setPdfSearchStatus] = useState<string | null>(null);
+  const [pptxPreviewUrl, setPptxPreviewUrl] = useState<string | null>(null);
+  const [pptxPreviewLoading, setPptxPreviewLoading] = useState(false);
+  const [pptxPreviewError, setPptxPreviewError] = useState<string | null>(null);
   const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfDocRef = useRef<import("pdfjs-dist").PDFDocumentProxy | null>(null);
   const pdfRenderingRef = useRef(false);
+
+  // JSON 编辑器状态
+  const [editedJsonContent, setEditedJsonContent] = useState<string>("");
+  const [isSavingJson, setIsSavingJson] = useState(false);
+  const [jsonToolbarPos, setJsonToolbarPos] = useState({ x: 16, y: 16 });
+  const [jsonToolbarExpanded, setJsonToolbarExpanded] = useState(false);
+  const jsonAreaRef = useRef<HTMLDivElement | null>(null);
+  const jsonToolbarRef = useRef<HTMLDivElement | null>(null);
+  const jsonDragRef = useRef<{ dragging: boolean; dx: number; dy: number }>({
+    dragging: false,
+    dx: 0,
+    dy: 0,
+  });
+  const [editedTextContent, setEditedTextContent] = useState<string>("");
+  const [isSavingText, setIsSavingText] = useState(false);
+  const [textToolbarPos, setTextToolbarPos] = useState({ x: 16, y: 16 });
+  const [textToolbarExpanded, setTextToolbarExpanded] = useState(false);
+  const textAreaRef = useRef<HTMLDivElement | null>(null);
+  const textToolbarRef = useRef<HTMLDivElement | null>(null);
+  const textDragRef = useRef<{ dragging: boolean; dx: number; dy: number }>({
+    dragging: false,
+    dx: 0,
+    dy: 0,
+  });
   const mime = detail?.mimetype || "";
   const filename = detail?.filename?.toLowerCase() || "";
 
@@ -72,6 +101,10 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   const isXlsx =
     mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     filename.endsWith(".xlsx");
+  const isCsv =
+    mime === "text/csv" ||
+    mime === "application/csv" ||
+    filename.endsWith(".csv");
   const isPptx =
     mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
     filename.endsWith(".pptx");
@@ -107,6 +140,71 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
     setPdfLoading(false);
   };
 
+  // JSON 编辑器处理函数
+  const handleSaveJson = async () => {
+    if (!detail) return;
+
+    try {
+      setIsSavingJson(true);
+      const formatted = JSON.stringify(JSON.parse(editedJsonContent), null, 2);
+
+      // 调用保存 API
+      const url = new URL("/api/knowledge/documents/" + detail.id + "/content", getGatewayBaseUrl());
+      const response = await fetch(url.toString(), {
+        method: "PUT",
+        headers: {
+          ...buildHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: formatted }),
+      });
+
+      if (!response.ok) throw new Error("保存失败");
+
+      // 更新原始内容
+      setTextContent(formatted);
+      setEditedJsonContent(formatted);
+      console.log("JSON 保存成功");
+      // TODO: 添加成功提示 toast
+    } catch (err) {
+      console.error("保存 JSON 失败:", err);
+      alert(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setIsSavingJson(false);
+    }
+  };
+
+  const handleResetJson = () => {
+    if (!textContent) return;
+    try {
+      setEditedJsonContent(JSON.stringify(JSON.parse(textContent), null, 2));
+    } catch {
+      setEditedJsonContent(textContent);
+    }
+  };
+
+  const handleSaveText = async () => {
+    if (!detail) return;
+    try {
+      setIsSavingText(true);
+      const url = new URL(`/api/knowledge/documents/${detail.id}/content`, getGatewayBaseUrl());
+      const response = await fetch(url.toString(), {
+        method: "PUT",
+        headers: {
+          ...buildHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: editedTextContent }),
+      });
+      if (!response.ok) throw new Error("保存失败");
+      setTextContent(editedTextContent);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setIsSavingText(false);
+    }
+  };
+
   useEffect(() => {
     let isActive = true;
     let nextUrl: string | null = null;
@@ -128,7 +226,7 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
       if (!isActive) return;
       nextUrl = URL.createObjectURL(blob);
       setBlobUrl(nextUrl);
-      if (detail.mimetype.startsWith("text/") || detail.mimetype === "text/markdown") {
+      if (detail.mimetype.startsWith("text/") || detail.mimetype === "text/markdown" || detail.mimetype === "application/json") {
         const text = await blob.text();
         if (!isActive) return;
         setTextContent(text);
@@ -143,6 +241,9 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
     setPdfPage(1);
     setPdfSearch("");
     setPdfSearchStatus(null);
+    setPptxPreviewUrl(null);
+    setPptxPreviewLoading(false);
+    setPptxPreviewError(null);
     pdfDocRef.current = null;
     void loadFile();
 
@@ -199,6 +300,90 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
     return () => window.clearTimeout(timeoutId);
   }, [keywords, mime]);
 
+  useEffect(() => {
+    if (!detail || !isPptx) return;
+    let active = true;
+    let objectUrl: string | null = null;
+
+    const loadPptxPreview = async () => {
+      try {
+        setPptxPreviewLoading(true);
+        setPptxPreviewError(null);
+        const url = new URL(`/api/knowledge/convert/pptx-to-pdf/${detail.id}`, getGatewayBaseUrl());
+        if (detail.kbId) {
+          url.searchParams.set("kbId", detail.kbId);
+        }
+        const response = await fetch(url.toString(), { headers: buildHeaders() });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`PPTX 转换失败: ${response.status} ${response.statusText} ${errorText}`);
+        }
+        const pdfBlob = await response.blob();
+        if (!active) return;
+        objectUrl = URL.createObjectURL(pdfBlob);
+        setPptxPreviewUrl(objectUrl);
+      } catch (error) {
+        if (!active) return;
+        setPptxPreviewError(error instanceof Error ? error.message : "PPTX 预览加载失败");
+      } finally {
+        if (active) {
+          setPptxPreviewLoading(false);
+        }
+      }
+    };
+
+    void loadPptxPreview();
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [detail, isPptx]);
+
+  useEffect(() => {
+    if (!(mime === "application/json" || filename.endsWith(".json"))) return;
+    if (!textContent) return;
+    try {
+      const formatted = JSON.stringify(JSON.parse(textContent), null, 2);
+      setEditedJsonContent(formatted);
+      setTextContent(formatted);
+    } catch {
+      setEditedJsonContent(textContent);
+    }
+  }, [textContent, mime, filename]);
+
+  useEffect(() => {
+    if (!isText || isMarkdown || mime === "application/json" || filename.endsWith(".json")) return;
+    setEditedTextContent(textContent);
+  }, [textContent, isText, isMarkdown, mime, filename]);
+
+  useEffect(() => {
+    if (!(mime === "application/json" || filename.endsWith(".json"))) return;
+    const area = jsonAreaRef.current;
+    const toolbar = jsonToolbarRef.current;
+    if (!area || !toolbar) return;
+
+    const areaRect = area.getBoundingClientRect();
+    const toolbarRect = toolbar.getBoundingClientRect();
+    setJsonToolbarPos({
+      x: Math.max(8, areaRect.width - toolbarRect.width - 8),
+      y: 8,
+    });
+  }, [mime, filename, jsonToolbarExpanded]);
+
+  useEffect(() => {
+    if (!isText || isMarkdown || mime === "application/json" || filename.endsWith(".json")) return;
+    const area = textAreaRef.current;
+    const toolbar = textToolbarRef.current;
+    if (!area || !toolbar) return;
+    const areaRect = area.getBoundingClientRect();
+    const toolbarRect = toolbar.getBoundingClientRect();
+    setTextToolbarPos({
+      x: Math.max(8, areaRect.width - toolbarRect.width - 8),
+      y: 8,
+    });
+  }, [isText, isMarkdown, mime, filename, textToolbarExpanded]);
+
   if (!detail) {
     return <div className="text-sm text-text-tertiary">暂无预览</div>;
   }
@@ -254,50 +439,224 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   }
 
   if (isDocx) {
-    return blobUrl ? <UniverDocPreview fileUrl={blobUrl} /> : <div className="text-sm text-text-tertiary">加载 Word 中...</div>;
+    return blobUrl ? <UniverDocPreview documentId={detail.id} /> : <div className="text-sm text-text-tertiary">加载 Word 中...</div>;
   }
 
   if (isXlsx) {
-    return blobUrl ? <UniverSheetPreview fileUrl={blobUrl} /> : <div className="text-sm text-text-tertiary">加载 Excel 中...</div>;
+    return blobUrl ? <UniverSheetPreview documentId={detail.id} /> : <div className="text-sm text-text-tertiary">加载 Excel 中...</div>;
+  }
+
+  if (isCsv) {
+    return blobUrl ? (
+      <UniverSheetPreview documentId={detail.id} fileType="csv" />
+    ) : (
+      <div className="text-sm text-text-tertiary">加载 CSV 中...</div>
+    );
   }
 
   if (isPptx) {
     return (
-      <div className="flex min-h-[360px] flex-col items-center justify-center gap-md rounded-lg border border-border-light p-lg">
-        <div className="space-y-xs text-center">
-          <p className="text-base font-semibold text-text-primary">PowerPoint 文件</p>
-          <p className="text-sm text-text-tertiary">暂不支持在线预览，请下载后使用本地软件打开。</p>
-        </div>
-        {blobUrl && (
-          <a
-            href={blobUrl}
-            download={detail.filename}
-            className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-sm text-white"
-          >
-            <Download className="h-4 w-4" />
-            下载文件
-          </a>
+      <div className="flex min-h-[360px] flex-col gap-sm">
+        {pptxPreviewLoading ? (
+          <div className="flex h-full min-h-[360px] items-center justify-center text-sm text-text-tertiary">
+            正在转换并加载 PPT 预览...
+          </div>
+        ) : pptxPreviewUrl ? (
+          <iframe
+            title={detail.filename}
+            src={pptxPreviewUrl}
+            className="h-full min-h-[520px] w-full rounded-lg border border-border-light"
+          />
+        ) : (
+          <div className="flex min-h-[360px] flex-col items-center justify-center gap-md rounded-lg border border-border-light p-lg">
+            <div className="space-y-xs text-center">
+              <p className="text-base font-semibold text-text-primary">PowerPoint 文件</p>
+              <p className="text-sm text-text-tertiary">
+                {pptxPreviewError || "当前环境不支持在线转换预览，请下载后使用本地软件打开。"}
+              </p>
+            </div>
+            {blobUrl && (
+              <a
+                href={blobUrl}
+                download={detail.filename}
+                className="inline-flex items-center gap-xs rounded-md bg-primary px-md py-sm text-sm text-white"
+              >
+                <Download className="h-4 w-4" />
+                下载文件
+              </a>
+            )}
+          </div>
         )}
       </div>
     );
   }
 
-  // JSON 预览
+  // JSON 预览与编辑
   if (mime === "application/json" || filename.endsWith(".json")) {
     return blobUrl && textContent ? (
-      <div>
-        {toolbar}
-        <pre className="overflow-auto rounded-lg bg-muted p-4 text-sm font-mono">
-          <code className="language-json">
-            {(() => {
-              try {
-                return JSON.stringify(JSON.parse(textContent), null, 2);
-              } catch {
-                return textContent;
-              }
-            })()}
-          </code>
-        </pre>
+      <div ref={jsonAreaRef} className="relative h-full flex flex-col">
+        <div
+          ref={jsonToolbarRef}
+          className="absolute z-10 flex select-none items-center gap-1 rounded-xl border border-primary/25 bg-background/95 p-1 text-text-primary shadow-sm backdrop-blur"
+          style={{ left: jsonToolbarPos.x, top: jsonToolbarPos.y }}
+          onMouseDown={(event) => {
+            const target = event.target as HTMLElement;
+            if (!target.closest("[data-json-drag]")) return;
+            const area = jsonAreaRef.current;
+            const toolbar = jsonToolbarRef.current;
+            if (!area || !toolbar) return;
+            const areaRect = area.getBoundingClientRect();
+            const toolbarRect = toolbar.getBoundingClientRect();
+            const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
+            jsonDragRef.current = {
+              dragging: true,
+              dx: event.clientX - rect.left,
+              dy: event.clientY - rect.top,
+            };
+            const onMove = (moveEvent: MouseEvent) => {
+              if (!jsonDragRef.current.dragging) return;
+              const nextX = moveEvent.clientX - jsonDragRef.current.dx;
+              const nextY = moveEvent.clientY - jsonDragRef.current.dy;
+              const minX = 8;
+              const minY = 8;
+              const maxX = Math.max(minX, areaRect.width - toolbarRect.width - 8);
+              const maxY = Math.max(minY, areaRect.height - toolbarRect.height - 8);
+              setJsonToolbarPos({
+                x: Math.min(maxX, Math.max(minX, nextX)),
+                y: Math.min(maxY, Math.max(minY, nextY)),
+              });
+            };
+            const onUp = () => {
+              jsonDragRef.current.dragging = false;
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+          }}
+          title="拖拽移动工具栏"
+        >
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-json-drag
+                  type="button"
+                  className="flex h-7 w-7 cursor-move items-center justify-center rounded-md bg-background/80 text-text-secondary transition-colors hover:bg-primary/15 hover:text-primary"
+                >
+                  <GripHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">拖拽</TooltipContent>
+            </Tooltip>
+            {jsonToolbarExpanded ? (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      data-json-action
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                      onClick={() => navigator.clipboard?.writeText(editedJsonContent)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">复制</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      data-json-action
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                      onClick={() => window.open(blobUrl, "_blank", "noopener")}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">打开</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      data-json-action
+                      href={blobUrl}
+                      download={detail.filename}
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">下载</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      data-json-action
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary disabled:opacity-40"
+                      onClick={handleResetJson}
+                      disabled={isSavingJson}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">重置</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      data-json-action
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                      onClick={handleSaveJson}
+                      disabled={isSavingJson}
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">保存</TooltipContent>
+                </Tooltip>
+              </>
+            ) : null}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  data-json-action
+                  type="button"
+                  className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-text-secondary transition-colors hover:bg-primary/15 hover:text-primary"
+                  onClick={() => setJsonToolbarExpanded((value) => !value)}
+                >
+                  {jsonToolbarExpanded ? (
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{jsonToolbarExpanded ? "收起" : "展开"}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <div className="flex-1 overflow-hidden rounded-lg border border-border-light">
+          <Editor
+            height="100%"
+            language="json"
+            value={editedJsonContent}
+            onChange={(value) => setEditedJsonContent(value || "")}
+            options={{
+              readOnly: false,
+              minimap: { enabled: false },
+              formatOnPaste: true,
+              formatOnType: true,
+              scrollBeyondLastLine: false,
+              fontSize: 14,
+              tabSize: 2,
+            }}
+            theme="vs-dark"
+          />
+        </div>
       </div>
     ) : (
       <div className="text-sm text-text-tertiary">加载 JSON 中...</div>
@@ -392,6 +751,167 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   }
 
   if (isText) {
+    if (!isMarkdown) {
+      return (
+        <div ref={textAreaRef} className="relative h-full flex flex-col">
+          <div
+            ref={textToolbarRef}
+            className="absolute z-10 flex select-none items-center gap-1 rounded-xl border border-primary/25 bg-background/95 p-1 text-text-primary shadow-sm backdrop-blur"
+            style={{ left: textToolbarPos.x, top: textToolbarPos.y }}
+            onMouseDown={(event) => {
+              const target = event.target as HTMLElement;
+              if (!target.closest("[data-text-drag]")) return;
+              const area = textAreaRef.current;
+              const toolbar = textToolbarRef.current;
+              if (!area || !toolbar) return;
+              const areaRect = area.getBoundingClientRect();
+              const toolbarRect = toolbar.getBoundingClientRect();
+              const rect = (event.currentTarget as HTMLDivElement).getBoundingClientRect();
+              textDragRef.current = {
+                dragging: true,
+                dx: event.clientX - rect.left,
+                dy: event.clientY - rect.top,
+              };
+              const onMove = (moveEvent: MouseEvent) => {
+                if (!textDragRef.current.dragging) return;
+                const nextX = moveEvent.clientX - textDragRef.current.dx;
+                const nextY = moveEvent.clientY - textDragRef.current.dy;
+                const minX = 8;
+                const minY = 8;
+                const maxX = Math.max(minX, areaRect.width - toolbarRect.width - 8);
+                const maxY = Math.max(minY, areaRect.height - toolbarRect.height - 8);
+                setTextToolbarPos({
+                  x: Math.min(maxX, Math.max(minX, nextX)),
+                  y: Math.min(maxY, Math.max(minY, nextY)),
+                });
+              };
+              const onUp = () => {
+                textDragRef.current.dragging = false;
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+          >
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    data-text-drag
+                    type="button"
+                    className="flex h-7 w-7 cursor-move items-center justify-center rounded-md bg-background/80 text-text-secondary transition-colors hover:bg-primary/15 hover:text-primary"
+                  >
+                    <GripHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">拖拽</TooltipContent>
+              </Tooltip>
+              {textToolbarExpanded ? (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                        onClick={() => navigator.clipboard?.writeText(editedTextContent)}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">复制</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                        onClick={() => blobUrl && window.open(blobUrl, "_blank", "noopener")}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">打开</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <a
+                        href={blobUrl || undefined}
+                        download={detail.filename}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">下载</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-primary transition-colors hover:bg-primary/15 hover:text-primary disabled:opacity-40"
+                        onClick={() => setEditedTextContent(textContent)}
+                        disabled={isSavingText}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">重置</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-white transition-colors hover:bg-primary/90 disabled:opacity-40"
+                        onClick={handleSaveText}
+                        disabled={isSavingText}
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">保存</TooltipContent>
+                  </Tooltip>
+                </>
+              ) : null}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-text-secondary transition-colors hover:bg-primary/15 hover:text-primary"
+                    onClick={() => setTextToolbarExpanded((value) => !value)}
+                  >
+                    {textToolbarExpanded ? (
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{textToolbarExpanded ? "收起" : "展开"}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+          <div className="flex-1 overflow-hidden rounded-lg border border-border-light">
+            <Editor
+              height="100%"
+              language="plaintext"
+              value={editedTextContent}
+              onChange={(value) => setEditedTextContent(value || "")}
+              options={{
+                readOnly: false,
+                minimap: { enabled: false },
+                wordWrap: "on",
+                scrollBeyondLastLine: false,
+                fontSize: 14,
+                tabSize: 2,
+              }}
+              theme="vs-dark"
+            />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div>
         {toolbar}

@@ -37,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { getStoredDeviceIdentity, resetDeviceIdentity } from "@/services/device-identity";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 
 interface TopBarProps {
@@ -71,6 +72,7 @@ export function TopBar({
     clearPairingRequest,
   } = useConnectionStore();
   const { addToast } = useToastStore();
+  const { openSettings } = useSettingsStore();
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isTokenOpen, setIsTokenOpen] = useState(false);
   const [tokenInput, setTokenInput] = useState(gatewayToken);
@@ -422,13 +424,17 @@ export function TopBar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openSettings("general")}>
               <User className="w-4 h-4 mr-2" />
-              个人设置
+              通用设置
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openSettings("skills")}>
               <Settings className="w-4 h-4 mr-2" />
-              系统设置
+              Skills 管理
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openSettings("models")}>
+              <Settings className="w-4 h-4 mr-2" />
+              模型配置
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem>

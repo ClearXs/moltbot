@@ -140,9 +140,8 @@ export function MessageBubble({
             <FileList files={files} title="生成的文档" />
           )}
 
-          {shouldShowMeta && !isUser && (usageLabel || hasToolInfo) && (
+          {shouldShowMeta && !isUser && hasToolInfo && (
             <div className="flex flex-col gap-xs text-xs text-text-tertiary">
-              {usageLabel && <div>Token 使用量：{usageLabel}</div>}
               {hasToolInfo && (
                 <button
                   type="button"

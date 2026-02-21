@@ -45,6 +45,13 @@ export type UpdateDocumentResult = {
   updatedAt: number;
 };
 
+export type UpdateDocumentMetadataParams = {
+  documentId: string;
+  filename?: string;
+  description?: string | null;
+  tags?: string[];
+};
+
 /**
  * Manages physical storage and metadata for knowledge base documents
  */
@@ -281,6 +288,38 @@ export class KnowledgeStorageManager {
       size,
       updatedAt,
     };
+  }
+
+  updateDocumentMetadata(params: UpdateDocumentMetadataParams): void {
+    const existing = this.getDocument(params.documentId);
+    if (!existing) {
+      throw new Error(`Document not found: ${params.documentId}`);
+    }
+
+    const nextFilename = params.filename?.trim() || existing.filename;
+    if (!nextFilename) {
+      throw new Error("filename is required");
+    }
+    const nextDescription =
+      params.description === undefined ? (existing.description ?? null) : params.description;
+
+    this.db
+      .prepare(
+        `UPDATE kb_documents
+         SET filename = ?, description = ?
+         WHERE id = ?`,
+      )
+      .run(nextFilename, nextDescription, params.documentId);
+
+    if (params.tags) {
+      this.db.prepare(`DELETE FROM kb_tags WHERE document_id = ?`).run(params.documentId);
+      if (params.tags.length > 0) {
+        const insertTag = this.db.prepare(`INSERT INTO kb_tags (document_id, tag) VALUES (?, ?)`);
+        for (const tag of params.tags) {
+          insertTag.run(params.documentId, tag);
+        }
+      }
+    }
   }
 
   /**

@@ -55,7 +55,13 @@ export function KnowledgeBasePage() {
   );
 
   return (
-    <div className="p-2xl">
+    <div
+      className={
+        view === "list"
+          ? "flex h-full min-h-0 flex-col p-2xl"
+          : "flex h-full min-h-0 flex-col px-2xl pt-2xl pb-0"
+      }
+    >
       {view === "list" ? (
         <div className="space-y-lg">
           <div className="flex items-center justify-between">
@@ -153,13 +159,15 @@ export function KnowledgeBasePage() {
           />
         </div>
       ) : (
-        <KnowledgeDetail
-          activeDocumentId={activeDocumentId}
-          onBack={() => {
-            void selectKb(null);
-            setView("list");
-          }}
-        />
+        <div className="flex-1 min-h-0">
+          <KnowledgeDetail
+            activeDocumentId={activeDocumentId}
+            onBack={() => {
+              void selectKb(null);
+              setView("list");
+            }}
+          />
+        </div>
       )}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-md">

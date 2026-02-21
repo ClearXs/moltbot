@@ -184,6 +184,7 @@
     "commander": "^14.0.3",
     "croner": "^10.0.1",
     "discord-api-types": "^0.38.38",
+    "docx": "^9.5.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "file-type": "^21.3.0",
@@ -194,7 +195,7 @@
     "jszip": "^3.10.1",
     "linkedom": "^0.18.12",
     "long": "^5.3.2",
-    "mammoth": "^1.8.0",
+    "mammoth": "^1.11.0",
     "markdown-it": "^14.1.0",
     "node-edge-tts": "^1.2.9",
     "osc-progress": "^0.3.0",
@@ -209,6 +210,7 @@
     "tslog": "^4.10.2",
     "undici": "^7.20.0",
     "ws": "^8.19.0",
+    "xlsx": "^0.18.5",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },
@@ -231,6 +233,7 @@
     "oxlint": "^1.43.0",
     "oxlint-tsgolint": "^0.11.4",
     "rolldown": "1.0.0-rc.2",
+    "tsdown": "^0.20.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

@@ -11,7 +11,6 @@ import {
   Info,
   ArrowLeft,
   MoreHorizontal,
-  RotateCcw,
   Trash2,
   Check,
   X,
@@ -39,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settingsStore";
 import appMeta from "../../../package.json";
 
 interface SidebarProps {
@@ -48,7 +48,6 @@ interface SidebarProps {
   onSelectSession?: (key: string) => void;
   onNewSession?: () => void;
   onRenameSession?: (key: string) => void;
-  onResetSession?: (key: string) => void;
   onDeleteSession?: (key: string) => void;
   onViewSession?: (key: string) => void;
   searchQuery?: string;
@@ -65,7 +64,6 @@ interface SidebarProps {
   onToggleSelectedKey?: (key: string) => void;
   onSelectAllKeys?: (keys: string[]) => void;
   onClearSelection?: () => void;
-  onBatchReset?: () => void;
   onBatchDelete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -81,7 +79,6 @@ const Sidebar = ({
   onSelectSession = () => {},
   onNewSession = () => {},
   onRenameSession = () => {},
-  onResetSession = () => {},
   onDeleteSession = () => {},
   onViewSession = () => {},
   searchQuery = "",
@@ -98,7 +95,6 @@ const Sidebar = ({
   onToggleSelectedKey = () => {},
   onSelectAllKeys = () => {},
   onClearSelection = () => {},
-  onBatchReset = () => {},
   onBatchDelete = () => {},
   isCollapsed = false,
   onToggleCollapse = () => {},
@@ -111,6 +107,7 @@ const Sidebar = ({
   // 品牌图标悬停状态（用于收起时显示返回箭头）
   const [isHoveringBrand, setIsHoveringBrand] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const { openSettings } = useSettingsStore();
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const lastScrollTopRef = useRef(0);
@@ -339,6 +336,7 @@ const Sidebar = ({
           <div className="flex flex-col items-center gap-md p-md flex-shrink-0">
             {/* 设置按钮 */}
             <button
+              onClick={() => openSettings()}
               className="w-10 h-10 rounded-md hover:bg-surface-hover flex items-center justify-center transition-colors duration-fast"
               title="设置"
             >
@@ -758,15 +756,6 @@ const Sidebar = ({
                                   重命名
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onResetSession(session.key);
-                                  }}
-                                >
-                                  <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                                  重置
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
                                   className="text-error focus:text-error"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -791,13 +780,7 @@ const Sidebar = ({
           {selectionMode && selectedKeys.length > 0 && (
             <div className="px-lg py-sm border-t border-border-light flex items-center gap-sm">
               <button
-                className="flex-1 text-xs px-sm py-xs rounded-md bg-background-secondary hover:bg-surface-hover transition-colors text-text-secondary"
-                onClick={onBatchReset}
-              >
-                批量重置
-              </button>
-              <button
-                className="flex-1 text-xs px-sm py-xs rounded-md bg-error/10 hover:bg-error/20 transition-colors text-error"
+                className="w-full text-xs px-sm py-xs rounded-md bg-error/10 hover:bg-error/20 transition-colors text-error"
                 onClick={onBatchDelete}
               >
                 批量删除
@@ -811,6 +794,7 @@ const Sidebar = ({
           <div className="flex items-center gap-sm">
             {/* 设置 - 仅图标（左侧） */}
             <button
+              onClick={() => openSettings()}
               className="flex-shrink-0 w-6 h-6 rounded hover:bg-background-secondary transition-colors flex items-center justify-center"
               title="设置"
             >

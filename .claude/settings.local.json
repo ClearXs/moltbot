@@ -27,7 +27,16 @@
       "Bash(timeout 10 pnpm openclaw --help:*)",
       "Bash(pnpm openclaw:*)",
       "Bash(pnpm list:*)",
-      "Bash(pnpm type-check:*)"
+      "Bash(pnpm type-check:*)",
+      "Bash(cat:*)",
+      "Bash(npm search @univerjs)",
+      "Bash(npm run build:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(pnpm exec oxlint:*)",
+      "Bash(npx next build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(python3:*)"
     ]
   }
 }

@@ -2,16 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { DocPreview } from "@/components/knowledge/preview/DocPreview";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
 
 interface KnowledgeDocDetailProps {
   documentId: string | null;
-  onBack: () => void;
 }
 
-export function KnowledgeDocDetail({ documentId, onBack }: KnowledgeDocDetailProps) {
+export function KnowledgeDocDetail({ documentId }: KnowledgeDocDetailProps) {
   const {
     detail,
     isLoadingDetail,
@@ -60,56 +58,54 @@ export function KnowledgeDocDetail({ documentId, onBack }: KnowledgeDocDetailPro
   }
 
   return (
-    <div className="space-y-md">
-      <div className="flex items-center justify-between">
-        <Button size="sm" variant="outline" onClick={onBack}>
-          返回文档列表
-        </Button>
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col gap-sm">
       {isLoadingDetail ? (
-        <div className="h-64 rounded-xl border border-border-light bg-background-secondary/40 animate-pulse" />
+        <div className="flex-1 rounded-lg border border-border-light bg-background-secondary/40 animate-pulse" />
       ) : (
-        <div className="grid grid-cols-12 gap-md">
-          <div className="col-span-4 rounded-xl border border-border-light p-md min-h-[420px]">
-            <div className="text-xs text-text-tertiary mb-sm">分块列表</div>
-            {isLoadingChunks ? (
-              <div className="space-y-xs">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="rounded-md border border-border-light px-sm py-xs text-xs text-text-secondary animate-pulse"
-                  >
-                    Chunk {index + 1}
-                  </div>
-                ))}
+        <div className="grid flex-1 min-h-0 grid-cols-12 gap-sm">
+            <div className="col-span-4 flex h-full min-h-0 flex-col rounded-lg border border-border-light p-sm">
+              {isLoadingChunks ? (
+                <div className="space-y-xs">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className="rounded-md border border-border-light px-sm py-xs text-xs text-text-secondary animate-pulse"
+                    >
+                      Chunk {index + 1}
+                    </div>
+                  ))}
+                </div>
+              ) : chunkIds.length === 0 ? (
+                <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border-light px-sm text-xs text-text-tertiary">
+                  暂无分块数据
+                </div>
+              ) : (
+                <div className="flex-1 space-y-1 overflow-auto pr-xs">
+                  {chunkIds.map((id) => (
+                    <button
+                      key={id}
+                      onClick={() => selectChunk(id)}
+                      ref={(element) => {
+                        chunkRefs.current[id] = element;
+                      }}
+                      className={cn(
+                        "w-full rounded-md border px-xs py-1 text-left text-[11px] transition-colors",
+                        activeChunkId === id
+                          ? "border-primary/40 bg-primary/5 text-text-primary"
+                          : "border-border-light text-text-secondary hover:bg-background-secondary",
+                      )}
+                    >
+                      Chunk {chunksById[id]?.index ?? id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="col-span-8 flex h-full min-h-0 flex-col">
+              <div className="flex-1 h-full min-h-0 overflow-hidden">
+                <DocPreview detail={detail} highlightKeywords={searchHighlightKeywords} />
               </div>
-            ) : (
-              <div className="space-y-xs max-h-[360px] overflow-auto pr-xs">
-                {chunkIds.map((id) => (
-                  <button
-                    key={id}
-                    onClick={() => selectChunk(id)}
-                    ref={(element) => {
-                      chunkRefs.current[id] = element;
-                    }}
-                    className={cn(
-                      "w-full rounded-md border px-sm py-xs text-left text-xs transition-colors",
-                      activeChunkId === id
-                        ? "border-primary/40 bg-primary/5 text-text-primary"
-                        : "border-border-light text-text-secondary hover:bg-background-secondary",
-                    )}
-                  >
-                    Chunk {chunksById[id]?.index ?? id}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="col-span-8 rounded-xl border border-border-light p-md min-h-[420px]">
-            <div className="text-xs text-text-tertiary mb-sm">原始文件预览</div>
-            <DocPreview detail={detail} highlightKeywords={searchHighlightKeywords} />
-          </div>
+            </div>
         </div>
       )}
     </div>

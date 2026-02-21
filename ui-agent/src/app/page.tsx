@@ -14,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { WelcomePage } from "@/components/welcome/WelcomePage";
 import { StreamingReplayProvider, useStreamingReplay } from "@/contexts/StreamingReplayContext";
 import { useConnectionStore } from "@/stores/connectionStore";
@@ -29,7 +32,6 @@ function HomeContent() {
     selectSession,
     createSession,
     renameSession,
-    resetSession,
     deleteSession,
     getSessionByKey,
     getUnreadMap,
@@ -90,6 +92,12 @@ function HomeContent() {
   const [draftAttachments, setDraftAttachments] = useState<File[]>([]);
   const [highlightDraft, setHighlightDraft] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+
+  // Dialog states
+  type DialogType = "rename" | "delete" | "batchDelete" | null;
+  const [activeDialog, setActiveDialog] = useState<DialogType>(null);
+  const [dialogSessionKey, setDialogSessionKey] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState("");
 
   // 动态消息状态管理 - 支持多轮对话
   const [conversationMessages, setConversationMessages] = useState<Record<string, Message[]>>({});
@@ -905,31 +913,68 @@ function HomeContent() {
 
   const handleShare = () => {
     console.log("分享对话");
-    alert("分享功能开发中...");
+    addToast({
+      title: "分享功能开发中",
+      description: "该功能正在开发中,敬请期待",
+    });
   };
 
   const handleExport = () => {
     console.log("导出对话");
-    alert("导出功能开发中...");
+    addToast({
+      title: "导出功能开发中",
+      description: "该功能正在开发中,敬请期待",
+    });
   };
 
   const handleDelete = () => {
     if (!currentConversationId) return;
-    if (!confirm("确定要删除此对话吗?")) return;
-    void deleteSession(currentConversationId);
-    setCurrentConversationId(null);
+    setDialogSessionKey(currentConversationId);
+    setActiveDialog("delete");
   };
 
   const handleRename = () => {
     if (!currentConversationId) return;
-    const newTitle = prompt("输入新的对话标题:");
-    if (!newTitle?.trim()) return;
-    void renameSession(currentConversationId, newTitle);
+    const session = getSessionByKey(currentConversationId);
+    setRenameInput(
+      session?.label || session?.derivedTitle || session?.displayName || ""
+    );
+    setDialogSessionKey(currentConversationId);
+    setActiveDialog("rename");
   };
 
-  const handleReset = (key: string) => {
-    if (!confirm("确定要重置该对话吗?")) return;
-    void resetSession(key);
+  const confirmRename = () => {
+    if (!dialogSessionKey || !renameInput.trim()) return;
+    void renameSession(dialogSessionKey, renameInput.trim());
+    setActiveDialog(null);
+    setDialogSessionKey(null);
+    setRenameInput("");
+  };
+
+  const confirmDelete = () => {
+    if (!dialogSessionKey) return;
+    void deleteSession(dialogSessionKey);
+    if (currentConversationId === dialogSessionKey) {
+      setCurrentConversationId(null);
+    }
+    setActiveDialog(null);
+    setDialogSessionKey(null);
+  };
+
+  const confirmBatchDelete = () => {
+    if (selectedKeys.length === 0) return;
+    selectedKeys.forEach((key) => deleteSession(key));
+    clearSelection();
+    if (selectedKeys.includes(currentConversationId ?? "")) {
+      setCurrentConversationId(null);
+    }
+    setActiveDialog(null);
+  };
+
+  const closeDialog = () => {
+    setActiveDialog(null);
+    setDialogSessionKey(null);
+    setRenameInput("");
   };
 
   const handleViewSession = (key: string) => {
@@ -1050,13 +1095,14 @@ function HomeContent() {
     (currentMessages.length === 0 && historyLoadingKey !== currentConversationId);
 
   return (
+    <>
     <MainLayout
       userName="张三"
       sessions={getFilteredSessions()}
       isLoading={isSessionsLoading}
       unreadMap={getUnreadMap()}
       currentSessionKey={currentConversationId}
-      conversationTitle={conversationTitle}
+      conversationTitle={activeMainView === "knowledge" ? undefined : conversationTitle}
       onSelectSession={handleSelectConversation}
       onNewSession={handleNewConversation}
       onSearchChange={setSearchQuery}
@@ -1073,39 +1119,27 @@ function HomeContent() {
       onToggleSelectedKey={toggleSelectedKey}
       onSelectAllKeys={(keys) => selectAllKeys(keys)}
       onClearSelection={clearSelection}
-      onBatchReset={() => {
-        if (selectedKeys.length === 0) return;
-        if (!confirm(`确定要重置 ${selectedKeys.length} 个会话吗?`)) return;
-        selectedKeys.forEach((key) => resetSession(key));
-        clearSelection();
-      }}
       onBatchDelete={() => {
         if (selectedKeys.length === 0) return;
-        if (!confirm(`确定要删除 ${selectedKeys.length} 个会话吗?`)) return;
-        selectedKeys.forEach((key) => deleteSession(key));
-        clearSelection();
-        if (selectedKeys.includes(currentConversationId ?? "")) {
-          setCurrentConversationId(null);
-        }
+        setActiveDialog("batchDelete");
       }}
       onRenameSession={(key) => {
         if (currentConversationId !== key) {
           setCurrentConversationId(key);
         }
-        const newTitle = prompt("输入新的对话标题:");
-        if (!newTitle?.trim()) return;
-        void renameSession(key, newTitle);
+        const session = getSessionByKey(key);
+        setRenameInput(
+          session?.label || session?.derivedTitle || session?.displayName || ""
+        );
+        setDialogSessionKey(key);
+        setActiveDialog("rename");
       }}
       onOpenKnowledge={() => setActiveMainView("knowledge")}
       showTopBar
       activeMainView={activeMainView}
-      onResetSession={handleReset}
       onDeleteSession={(key) => {
-        if (!confirm("确定要删除此对话吗?")) return;
-        void deleteSession(key);
-        if (currentConversationId === key) {
-          setCurrentConversationId(null);
-        }
+        setDialogSessionKey(key);
+        setActiveDialog("delete");
       }}
       onViewSession={handleViewSession}
       onShare={handleShare}
@@ -1117,7 +1151,7 @@ function HomeContent() {
         {/* 主内容区域 */}
         <div className="flex-1 overflow-hidden flex flex-col">
           {activeMainView === "knowledge" ? (
-            <div className="flex-1 overflow-auto bg-background-tertiary">
+            <div className="flex-1 overflow-hidden bg-background-tertiary">
               <KnowledgeBasePage />
             </div>
           ) : !showWelcomePage ? (
@@ -1232,6 +1266,7 @@ function HomeContent() {
           )}
         </div>
       </div>
+      {/* 会话详情对话框 */}
       <Dialog open={Boolean(detailSessionKey)} onOpenChange={() => setDetailSessionKey(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1305,7 +1340,80 @@ function HomeContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 重命名对话框 */}
+      <Dialog open={activeDialog === "rename"} onOpenChange={closeDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>重命名对话</DialogTitle>
+            <DialogDescription>请输入新的对话标题</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              placeholder="输入新的对话标题"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && renameInput.trim()) {
+                  confirmRename();
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              取消
+            </Button>
+            <Button onClick={confirmRename} disabled={!renameInput.trim()}>
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除确认对话框 */}
+      <Dialog open={activeDialog === "delete"} onOpenChange={closeDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除对话</DialogTitle>
+            <DialogDescription>确定要删除此对话吗?删除后将无法恢复。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量删除确认对话框 */}
+      <Dialog open={activeDialog === "batchDelete"} onOpenChange={closeDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>批量删除</DialogTitle>
+            <DialogDescription>
+              确定要删除 {selectedKeys.length} 个会话吗?删除后将无法恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={confirmBatchDelete}>
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
+
+    {/* 全局设置对话框 */}
+    <SettingsDialog />
+    </>
   );
 }
 

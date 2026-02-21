@@ -756,6 +756,68 @@ export async function handleKnowledgeHttpRequest(
       return true;
     }
 
+    if (url.pathname === "/api/knowledge/metadata") {
+      if (req.method !== "PUT") {
+        sendMethodNotAllowed(res, "PUT");
+        return true;
+      }
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      const documentId = typeof body.documentId === "string" ? body.documentId.trim() : "";
+      const kbId = typeof body.kbId === "string" ? body.kbId.trim() : "";
+      if (!documentId) {
+        sendInvalidRequest(res, "documentId is required");
+        return true;
+      }
+      if (!kbId) {
+        sendInvalidRequest(res, "kbId is required");
+        return true;
+      }
+      const tags =
+        Array.isArray(body.tags) && body.tags.every((item) => typeof item === "string")
+          ? body.tags.map((tag) => tag.trim()).filter(Boolean)
+          : undefined;
+      const description =
+        body.description === null
+          ? null
+          : typeof body.description === "string"
+            ? body.description
+            : undefined;
+      try {
+        const updated = manager.updateDocumentMetadata({
+          agentId,
+          documentId,
+          kbId,
+          filename: typeof body.filename === "string" ? body.filename.trim() : undefined,
+          description,
+          tags,
+        });
+        sendJson(res, 200, {
+          id: updated.id,
+          kbId: updated.kb_id ?? null,
+          filename: updated.filename,
+          filepath: updated.filepath,
+          mimetype: updated.mimetype,
+          size: updated.size,
+          hash: updated.hash,
+          sourceType: updated.source_type,
+          sourceMetadata: updated.source_metadata ? JSON.parse(updated.source_metadata) : null,
+          uploadedAt: new Date(updated.uploaded_at).toISOString(),
+          indexedAt: updated.indexed_at ? new Date(updated.indexed_at).toISOString() : null,
+          description: updated.description,
+          tags: updated.tags,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Update metadata failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
     if (url.pathname === "/api/knowledge/delete") {
       if (req.method !== "POST") {
         sendMethodNotAllowed(res, "POST");
@@ -793,6 +855,204 @@ export async function handleKnowledgeHttpRequest(
         sendJson(res, 200, { success: true, documentId });
       } catch (err) {
         sendInvalidRequest(res, `Delete failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    // Match /api/knowledge/documents/:id/content
+    const contentMatch = url.pathname.match(/^\/api\/knowledge\/documents\/([^/]+)\/content$/);
+    if (contentMatch) {
+      const documentId = contentMatch[1];
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (req.method !== "PUT") {
+        sendMethodNotAllowed(res, "PUT");
+        return true;
+      }
+      try {
+        const bodyUnknown = await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES);
+        if (!bodyUnknown) {
+          return true;
+        }
+
+        const body = bodyUnknown as Record<string, unknown>;
+        if (typeof body.content !== "string") {
+          sendInvalidRequest(res, "Missing or invalid 'content' field");
+          return true;
+        }
+
+        const content = body.content;
+
+        const resolved = manager.resolveDocumentPath({ agentId, documentId, kbId });
+        await fsPromises.writeFile(resolved.absPath, content, "utf-8");
+
+        // Update document metadata
+        const updatedAt = new Date().toISOString();
+        const db = getDatabase(agentId);
+        db.prepare(`UPDATE knowledge_documents SET updatedAt = ? WHERE id = ?`).run(
+          updatedAt,
+          documentId,
+        );
+
+        sendJson(res, 200, {
+          success: true,
+          message: "Content saved successfully",
+          documentId,
+          updatedAt,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Save content failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    // Match /api/knowledge/convert/to-univer/:id
+    const toUniverMatch = url.pathname.match(/^\/api\/knowledge\/convert\/to-univer\/([^/]+)$/);
+    if (toUniverMatch) {
+      const documentId = toUniverMatch[1];
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      try {
+        // Get type query parameter (xlsx, csv or docx)
+        const fileType = url.searchParams.get("type");
+        if (!fileType || (fileType !== "xlsx" && fileType !== "csv" && fileType !== "docx")) {
+          sendInvalidRequest(
+            res,
+            "Missing or invalid 'type' query parameter (must be 'xlsx', 'csv' or 'docx')",
+          );
+          return true;
+        }
+
+        const resolved = manager.resolveDocumentPath({ agentId, documentId, kbId });
+
+        // Import converter functions
+        const { xlsxToUniver, csvToUniver, docxToUniver } =
+          await import("./knowledge-converters.js");
+
+        // Convert based on file type
+        let univerData: unknown;
+        if (fileType === "xlsx") {
+          univerData = await xlsxToUniver(resolved.absPath);
+        } else if (fileType === "csv") {
+          univerData = await csvToUniver(resolved.absPath);
+        } else {
+          univerData = await docxToUniver(resolved.absPath);
+        }
+
+        sendJson(res, 200, {
+          success: true,
+          data: univerData,
+          documentId,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Conversion failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    // Match /api/knowledge/save-from-univer/:id
+    const saveFromUniverMatch = url.pathname.match(/^\/api\/knowledge\/save-from-univer\/([^/]+)$/);
+    if (saveFromUniverMatch) {
+      const documentId = saveFromUniverMatch[1];
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+      try {
+        const bodyUnknown = await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES);
+        if (!bodyUnknown) {
+          return true;
+        }
+
+        const body = bodyUnknown as Record<string, unknown>;
+        if (!body.data || typeof body.data !== "object") {
+          sendInvalidRequest(res, "Missing or invalid 'data' field");
+          return true;
+        }
+        const kbId =
+          typeof body.kbId === "string" && body.kbId.trim().length > 0
+            ? body.kbId.trim()
+            : undefined;
+
+        const fileType = body.type;
+        if (!fileType || (fileType !== "xlsx" && fileType !== "csv" && fileType !== "docx")) {
+          sendInvalidRequest(
+            res,
+            "Missing or invalid 'type' field (must be 'xlsx', 'csv' or 'docx')",
+          );
+          return true;
+        }
+
+        const resolved = manager.resolveDocumentPath({ agentId, documentId, kbId });
+
+        // Import converter functions
+        const { univerToXlsx, univerToCsv, univerToDocx } =
+          await import("./knowledge-converters.js");
+
+        // Save based on file type
+        if (fileType === "xlsx") {
+          await univerToXlsx(body.data as never, resolved.absPath);
+        } else if (fileType === "csv") {
+          await univerToCsv(body.data as never, resolved.absPath);
+        } else {
+          await univerToDocx(body.data as never, resolved.absPath);
+        }
+
+        // Update document metadata
+        const updatedAt = new Date().toISOString();
+        const db = getDatabase(agentId);
+        db.prepare(`UPDATE knowledge_documents SET updatedAt = ? WHERE id = ?`).run(
+          updatedAt,
+          documentId,
+        );
+
+        sendJson(res, 200, {
+          success: true,
+          message: "Document saved successfully",
+          documentId,
+          updatedAt,
+        });
+      } catch (err) {
+        sendInvalidRequest(res, `Save failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    // Match /api/knowledge/convert/pptx-to-pdf/:id
+    const pptxToPdfMatch = url.pathname.match(/^\/api\/knowledge\/convert\/pptx-to-pdf\/([^/]+)$/);
+    if (pptxToPdfMatch) {
+      const documentId = pptxToPdfMatch[1];
+      const kbId = url.searchParams.get("kbId")?.trim() || undefined;
+      if (req.method !== "GET") {
+        sendMethodNotAllowed(res, "GET");
+        return true;
+      }
+      try {
+        const resolved = manager.resolveDocumentPath({ agentId, documentId, kbId });
+
+        // Generate PDF path
+        const path = await import("node:path");
+        const pdfPath = resolved.absPath.replace(/\.pptx$/i, ".pdf");
+
+        // Import converter function
+        const { pptxToPdf } = await import("./knowledge-converters.js");
+
+        // Convert PPTX to PDF
+        await pptxToPdf(resolved.absPath, pdfPath);
+
+        // Read and send the PDF file
+        const { promises: fsPromises } = await import("node:fs");
+        const pdfBuffer = await fsPromises.readFile(pdfPath);
+
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Length", pdfBuffer.length);
+        res.setHeader("Content-Disposition", `inline; filename="${path.basename(pdfPath)}"`);
+        res.end(pdfBuffer);
+      } catch (err) {
+        sendInvalidRequest(res, `PDF conversion failed: ${formatError(err)}`);
       }
       return true;
     }

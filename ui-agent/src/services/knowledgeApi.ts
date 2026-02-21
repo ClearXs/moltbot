@@ -274,6 +274,28 @@ export async function updateKnowledge(params: {
   return data;
 }
 
+export async function updateKnowledgeMetadata(params: {
+  kbId: string;
+  documentId: string;
+  filename?: string;
+  description?: string;
+  tags?: string[];
+}): Promise<KnowledgeDetail> {
+  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/metadata`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "文档元信息更新失败");
+  }
+  return data as KnowledgeDetail;
+}
+
 export async function listKnowledge(params: {
   kbId?: string;
   tags?: string[];
@@ -450,6 +472,26 @@ export async function getKnowledgeSettings(): Promise<KnowledgeSettingsResponse>
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data?.message || "设置加载失败");
+  }
+  return data as KnowledgeSettingsResponse;
+}
+
+export async function updateKnowledgeSettings(params: {
+  vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
+  graph?: Partial<KnowledgeSettingsResponse["graph"]>;
+}): Promise<KnowledgeSettingsResponse> {
+  const url = buildGatewayUrl("/api/knowledge/settings");
+  const response = await fetch(url.toString(), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "设置更新失败");
   }
   return data as KnowledgeSettingsResponse;
 }
