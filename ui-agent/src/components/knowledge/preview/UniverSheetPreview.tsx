@@ -1,22 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
 import { IUniverInstanceService, LocaleType, Univer, UniverInstanceType } from "@univerjs/core";
 import { defaultTheme } from "@univerjs/design";
 import { UniverDocsPlugin } from "@univerjs/docs";
 import { UniverDocsUIPlugin } from "@univerjs/docs-ui";
+import docsUiZhCN from "@univerjs/docs-ui/locale/zh-CN";
+import { UniverFormulaEnginePlugin } from "@univerjs/engine-formula";
+import { IRenderManagerService, UniverRenderEnginePlugin } from "@univerjs/engine-render";
 import { UniverSheetsPlugin } from "@univerjs/sheets";
 import { UniverSheetsUIPlugin } from "@univerjs/sheets-ui";
-import { IRenderManagerService, UniverRenderEnginePlugin } from "@univerjs/engine-render";
-import { UniverUIPlugin } from "@univerjs/ui";
-import { UniverFormulaEnginePlugin } from "@univerjs/engine-formula";
-import uiZhCN from "@univerjs/ui/locale/zh-CN";
-import docsUiZhCN from "@univerjs/docs-ui/locale/zh-CN";
-import sheetsZhCN from "@univerjs/sheets/locale/zh-CN";
 import sheetsUiZhCN from "@univerjs/sheets-ui/locale/zh-CN";
+import sheetsZhCN from "@univerjs/sheets/locale/zh-CN";
+import { UniverUIPlugin } from "@univerjs/ui";
+import uiZhCN from "@univerjs/ui/locale/zh-CN";
+import { Loader2, AlertCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { buildHeaders, getGatewayBaseUrl } from "@/services/knowledgeApi";
-
 import "@univerjs/design/lib/index.css";
 import "@univerjs/ui/lib/index.css";
 import "@univerjs/sheets-ui/lib/index.css";
@@ -64,7 +63,9 @@ export function UniverSheetPreview({
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Failed to load spreadsheet: ${response.status} ${response.statusText} ${errorText}`);
+          throw new Error(
+            `Failed to load spreadsheet: ${response.status} ${response.statusText} ${errorText}`,
+          );
         }
 
         const result = await response.json();
@@ -110,12 +111,17 @@ export function UniverSheetPreview({
       | { get?: (token: unknown) => unknown }
       | undefined;
 
-    const unitId = typeof (sheetUnit as { getUnitId?: () => string }).getUnitId === "function"
-      ? (sheetUnit as { getUnitId: () => string }).getUnitId()
-      : "";
+    const unitId =
+      typeof (sheetUnit as { getUnitId?: () => string }).getUnitId === "function"
+        ? (sheetUnit as { getUnitId: () => string }).getUnitId()
+        : "";
 
-    const instanceService = injector?.get?.(IUniverInstanceService) as IUniverInstanceService | undefined;
-    const renderManagerService = injector?.get?.(IRenderManagerService) as IRenderManagerService | undefined;
+    const instanceService = injector?.get?.(IUniverInstanceService) as
+      | IUniverInstanceService
+      | undefined;
+    const renderManagerService = injector?.get?.(IRenderManagerService) as
+      | IRenderManagerService
+      | undefined;
 
     const ensureActiveUnit = () => {
       if (!unitId || !instanceService) return;
@@ -129,24 +135,30 @@ export function UniverSheetPreview({
       if (!render) return;
       const scene = render.scene;
       const target = event.target as HTMLElement | null;
-      const x = typeof (event as WheelEvent & { offsetX?: number }).offsetX === "number"
-        ? (event as WheelEvent & { offsetX: number }).offsetX
-        : target?.getBoundingClientRect
-          ? event.clientX - target.getBoundingClientRect().left
-          : 0;
-      const y = typeof (event as WheelEvent & { offsetY?: number }).offsetY === "number"
-        ? (event as WheelEvent & { offsetY: number }).offsetY
-        : target?.getBoundingClientRect
-          ? event.clientY - target.getBoundingClientRect().top
-          : 0;
+      const x =
+        typeof (event as WheelEvent & { offsetX?: number }).offsetX === "number"
+          ? (event as WheelEvent & { offsetX: number }).offsetX
+          : target?.getBoundingClientRect
+            ? event.clientX - target.getBoundingClientRect().left
+            : 0;
+      const y =
+        typeof (event as WheelEvent & { offsetY?: number }).offsetY === "number"
+          ? (event as WheelEvent & { offsetY: number }).offsetY
+          : target?.getBoundingClientRect
+            ? event.clientY - target.getBoundingClientRect().top
+            : 0;
       const activeViewport =
         scene.getActiveViewportByCoord({ x, y } as never) ??
         scene.getViewport("viewMain") ??
         scene.getMainViewport();
       if (!activeViewport) return;
       activeViewport.onMouseWheel(
-        event,
-        { stopPropagation: () => {} } as unknown as { stopPropagation: () => void },
+        event as unknown as never,
+        {
+          stopPropagation: () => {},
+          skipNextObservers: false,
+          isStopPropagation: false,
+        } as unknown as never,
       );
     };
 
@@ -183,7 +195,7 @@ export function UniverSheetPreview({
         <AlertCircle className="h-12 w-12 text-destructive" />
         <div className="text-center space-y-2">
           <p className="text-base font-medium">加载失败</p>
-          <p className="text-sm text-muted-foreground max-w-md">{error}</p>
+          <p className="text-sm text-muted-foreground max-w-[28rem]">{error}</p>
         </div>
       </div>
     );

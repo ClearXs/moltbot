@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +28,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useToastStore } from "@/stores/toastStore";
 
@@ -140,9 +140,7 @@ function ApiKeyField({
 }
 
 function ModelRow({ model }: { model: ModelDefinition }) {
-  const costStr = model.cost
-    ? `$${model.cost.input ?? 0}/${model.cost.output ?? 0}`
-    : "—";
+  const costStr = model.cost ? `$${model.cost.input ?? 0}/${model.cost.output ?? 0}` : "—";
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-surface-hover text-xs">
@@ -165,9 +163,8 @@ function ModelRow({ model }: { model: ModelDefinition }) {
         )}
         {model.maxTokens && (
           <span title="Max output tokens">
-            max {model.maxTokens >= 1000
-              ? `${Math.round(model.maxTokens / 1000)}K`
-              : model.maxTokens}
+            max{" "}
+            {model.maxTokens >= 1000 ? `${Math.round(model.maxTokens / 1000)}K` : model.maxTokens}
           </span>
         )}
       </div>
@@ -196,9 +193,7 @@ function AddProviderDialog({
   const [auth, setAuth] = useState("api-key");
   const [apiKey, setApiKey] = useState("");
 
-  const nameError = name && existingNames.includes(name.toLowerCase())
-    ? "该提供商名称已存在"
-    : "";
+  const nameError = name && existingNames.includes(name.toLowerCase()) ? "该提供商名称已存在" : "";
 
   const canSubmit = name.trim() && baseUrl.trim() && !nameError;
 
@@ -219,12 +214,10 @@ function AddProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-[28rem]">
         <DialogHeader>
           <DialogTitle>添加模型提供商</DialogTitle>
-          <DialogDescription>
-            配置新的模型提供商以使用自定义 API 端点。
-          </DialogDescription>
+          <DialogDescription>配置新的模型提供商以使用自定义 API 端点。</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -261,7 +254,9 @@ function AddProviderDialog({
               className="h-8 w-full rounded-md border border-border-light bg-background px-2 text-xs"
             >
               {API_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
               ))}
             </select>
           </div>
@@ -274,7 +269,9 @@ function AddProviderDialog({
               className="h-8 w-full rounded-md border border-border-light bg-background px-2 text-xs"
             >
               {AUTH_MODES.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
               ))}
             </select>
           </div>
@@ -320,7 +317,7 @@ function RemoveProviderDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-[24rem]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -335,21 +332,22 @@ function RemoveProviderDialog({
           </p>
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3">
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              删除后，该提供商下的所有模型配置和 API Key 将被移除。使用该提供商模型的 Agent 配置可能需要手动更新。
+              删除后，该提供商下的所有模型配置和 API Key 将被移除。使用该提供商模型的 Agent
+              配置可能需要手动更新。
             </p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={isRemoving}>
-            取消
-          </Button>
           <Button
+            variant="outline"
             size="sm"
-            variant="destructive"
-            onClick={onConfirm}
+            onClick={() => onOpenChange(false)}
             disabled={isRemoving}
           >
+            取消
+          </Button>
+          <Button size="sm" variant="destructive" onClick={onConfirm} disabled={isRemoving}>
             {isRemoving ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
@@ -389,13 +387,14 @@ function ProviderCard({
   const [editingBaseUrl, setEditingBaseUrl] = useState(false);
   const [baseUrlDraft, setBaseUrlDraft] = useState(provider.baseUrl);
 
-  const authLabel = provider.auth === "aws-sdk"
-    ? "AWS SDK"
-    : provider.auth === "oauth"
-      ? "OAuth"
-      : provider.auth === "token"
-        ? "Token"
-        : "API Key";
+  const authLabel =
+    provider.auth === "aws-sdk"
+      ? "AWS SDK"
+      : provider.auth === "oauth"
+        ? "OAuth"
+        : provider.auth === "token"
+          ? "Token"
+          : "API Key";
 
   const handleSaveBaseUrl = () => {
     const trimmed = baseUrlDraft.trim();
@@ -435,7 +434,10 @@ function ProviderCard({
             size="sm"
             variant="ghost"
             className="h-7 w-7 p-0 text-text-tertiary hover:text-error"
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
             title="移除此提供商"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -470,21 +472,40 @@ function ProviderCard({
                   className="h-8 text-xs font-mono flex-1"
                   autoFocus
                 />
-                <Button size="sm" variant="outline" className="h-8 w-8 p-0 flex-shrink-0" onClick={handleSaveBaseUrl} title="保存">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-8 p-0 flex-shrink-0"
+                  onClick={handleSaveBaseUrl}
+                  title="保存"
+                >
                   <Save className="w-3.5 h-3.5" />
                 </Button>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 flex-shrink-0" onClick={handleCancelBaseUrl} title="取消">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 flex-shrink-0"
+                  onClick={handleCancelBaseUrl}
+                  title="取消"
+                >
                   <X className="w-3.5 h-3.5" />
                 </Button>
               </div>
             ) : (
               <div className="flex items-center gap-1.5">
-                <Input value={provider.baseUrl} readOnly className="h-8 text-xs font-mono bg-surface-subtle flex-1" />
+                <Input
+                  value={provider.baseUrl}
+                  readOnly
+                  className="h-8 text-xs font-mono bg-surface-subtle flex-1"
+                />
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-8 w-8 p-0 flex-shrink-0"
-                  onClick={() => { setBaseUrlDraft(provider.baseUrl); setEditingBaseUrl(true); }}
+                  onClick={() => {
+                    setBaseUrlDraft(provider.baseUrl);
+                    setEditingBaseUrl(true);
+                  }}
                   title="编辑"
                 >
                   <Pencil className="w-3.5 h-3.5" />
@@ -535,7 +556,10 @@ export function ModelsTab() {
   const wsClient = useConnectionStore((s) => s.wsClient);
 
   const loadCatalog = useCallback(async () => {
-    if (!wsClient) { setCatalogError("未连接到网关"); return; }
+    if (!wsClient) {
+      setCatalogError("未连接到网关");
+      return;
+    }
     setIsCatalogLoading(true);
     setCatalogError(null);
     try {
@@ -553,7 +577,11 @@ export function ModelsTab() {
     setIsConfigLoading(true);
     setConfigError(null);
     try {
-      const result = await wsClient.sendRequest<{ raw: string; hash: string; parsed?: Record<string, unknown> }>("config.get", {});
+      const result = await wsClient.sendRequest<{
+        raw: string;
+        hash: string;
+        parsed?: Record<string, unknown>;
+      }>("config.get", {});
       const parsed = result?.parsed ?? (result?.raw ? JSON.parse(result.raw) : null);
       setConfigHash(result?.hash ?? null);
       const modelsProviders = (parsed?.models as Record<string, unknown>)?.providers;
@@ -567,13 +595,22 @@ export function ModelsTab() {
     }
   }, [wsClient]);
 
-  useEffect(() => { void loadCatalog(); void loadConfig(); }, [loadCatalog, loadConfig]);
+  useEffect(() => {
+    void loadCatalog();
+    void loadConfig();
+  }, [loadCatalog, loadConfig]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ModelCatalogEntry[]>();
     const q = search.toLowerCase();
     for (const m of catalog) {
-      if (q && !m.id.toLowerCase().includes(q) && !m.name.toLowerCase().includes(q) && !m.provider.toLowerCase().includes(q)) continue;
+      if (
+        q &&
+        !m.id.toLowerCase().includes(q) &&
+        !m.name.toLowerCase().includes(q) &&
+        !m.provider.toLowerCase().includes(q)
+      )
+        continue;
       const list = map.get(m.provider) ?? [];
       list.push(m);
       map.set(m.provider, list);
@@ -581,58 +618,86 @@ export function ModelsTab() {
     return map;
   }, [catalog, search]);
 
-  const patchProvider = useCallback(async (providerName: string, value: Record<string, unknown> | null) => {
-    if (!wsClient) return false;
-    try {
-      const result = await wsClient.sendRequest<{ hash?: string }>("config.patch", {
-        raw: JSON.stringify({ models: { providers: { [providerName]: value } } }),
-        baseHash: configHash,
-      });
-      if (result?.hash) setConfigHash(result.hash);
-      return true;
-    } catch (err) {
-      addToast({ title: "保存失败", description: err instanceof Error ? err.message : "未知错误", variant: "error" });
-      return false;
-    }
-  }, [wsClient, configHash, addToast]);
+  const patchProvider = useCallback(
+    async (providerName: string, value: Record<string, unknown> | null) => {
+      if (!wsClient) return false;
+      try {
+        const result = await wsClient.sendRequest<{ hash?: string }>("config.patch", {
+          raw: JSON.stringify({ models: { providers: { [providerName]: value } } }),
+          baseHash: configHash,
+        });
+        if (result?.hash) setConfigHash(result.hash);
+        return true;
+      } catch (err) {
+        addToast({
+          title: "保存失败",
+          description: err instanceof Error ? err.message : "未知错误",
+          variant: "error",
+        });
+        return false;
+      }
+    },
+    [wsClient, configHash, addToast],
+  );
 
-  const handleApiKeyChange = useCallback(async (providerName: string, apiKey: string) => {
-    const ok = await patchProvider(providerName, { apiKey });
-    if (ok) {
-      setProviders((prev) => ({ ...prev, [providerName]: { ...prev[providerName], apiKey } }));
-      addToast({ title: "已更新", description: `${providerName} API Key 已保存` });
-    }
-  }, [patchProvider, addToast]);
+  const handleApiKeyChange = useCallback(
+    async (providerName: string, apiKey: string) => {
+      const ok = await patchProvider(providerName, { apiKey });
+      if (ok) {
+        setProviders((prev) => ({ ...prev, [providerName]: { ...prev[providerName], apiKey } }));
+        addToast({ title: "已更新", description: `${providerName} API Key 已保存` });
+      }
+    },
+    [patchProvider, addToast],
+  );
 
-  const handleBaseUrlChange = useCallback(async (providerName: string, baseUrl: string) => {
-    const ok = await patchProvider(providerName, { baseUrl });
-    if (ok) {
-      setProviders((prev) => ({ ...prev, [providerName]: { ...prev[providerName], baseUrl } }));
-      addToast({ title: "已更新", description: `${providerName} Base URL 已保存` });
-    }
-  }, [patchProvider, addToast]);
+  const handleBaseUrlChange = useCallback(
+    async (providerName: string, baseUrl: string) => {
+      const ok = await patchProvider(providerName, { baseUrl });
+      if (ok) {
+        setProviders((prev) => ({ ...prev, [providerName]: { ...prev[providerName], baseUrl } }));
+        addToast({ title: "已更新", description: `${providerName} Base URL 已保存` });
+      }
+    },
+    [patchProvider, addToast],
+  );
 
-  const handleAddProvider = useCallback(async (name: string, data: Omit<ModelProvider, "models">) => {
-    const payload: Record<string, unknown> = { baseUrl: data.baseUrl, api: data.api, auth: data.auth, models: [] };
-    if (data.apiKey) payload.apiKey = data.apiKey;
-    const ok = await patchProvider(name, payload);
-    if (ok) {
-      setProviders((prev) => ({ ...prev, [name]: { ...data, models: [] } }));
-      setAddProviderOpen(false);
-      addToast({ title: "已添加", description: `提供商 ${name} 已成功添加` });
-    }
-  }, [patchProvider, addToast]);
+  const handleAddProvider = useCallback(
+    async (name: string, data: Omit<ModelProvider, "models">) => {
+      const payload: Record<string, unknown> = {
+        baseUrl: data.baseUrl,
+        api: data.api,
+        auth: data.auth,
+        models: [],
+      };
+      if (data.apiKey) payload.apiKey = data.apiKey;
+      const ok = await patchProvider(name, payload);
+      if (ok) {
+        setProviders((prev) => ({ ...prev, [name]: { ...data, models: [] } }));
+        setAddProviderOpen(false);
+        addToast({ title: "已添加", description: `提供商 ${name} 已成功添加` });
+      }
+    },
+    [patchProvider, addToast],
+  );
 
-  const handleRemoveProvider = useCallback(async (providerName: string) => {
-    setIsRemoving(true);
-    const ok = await patchProvider(providerName, null);
-    setIsRemoving(false);
-    if (ok) {
-      setProviders((prev) => { const next = { ...prev }; delete next[providerName]; return next; });
-      setRemoveTarget(null);
-      addToast({ title: "已删除", description: `提供商 ${providerName} 已移除` });
-    }
-  }, [patchProvider, addToast]);
+  const handleRemoveProvider = useCallback(
+    async (providerName: string) => {
+      setIsRemoving(true);
+      const ok = await patchProvider(providerName, null);
+      setIsRemoving(false);
+      if (ok) {
+        setProviders((prev) => {
+          const next = { ...prev };
+          delete next[providerName];
+          return next;
+        });
+        setRemoveTarget(null);
+        addToast({ title: "已删除", description: `提供商 ${providerName} 已移除` });
+      }
+    },
+    [patchProvider, addToast],
+  );
 
   if (isCatalogLoading && isConfigLoading) {
     return (
@@ -669,13 +734,31 @@ export function ModelsTab() {
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-tertiary" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索模型..." className="h-8 text-xs pl-8 w-[200px]" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索模型..."
+              className="h-8 text-xs pl-8 w-[200px]"
+            />
           </div>
-          <Button size="sm" variant="outline" className="h-8" onClick={() => setAddProviderOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => setAddProviderOpen(true)}
+          >
             <Plus className="w-3.5 h-3.5 mr-1.5" />
             添加提供商
           </Button>
-          <Button size="sm" variant="outline" className="h-8" onClick={() => { void loadCatalog(); void loadConfig(); }}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => {
+              void loadCatalog();
+              void loadConfig();
+            }}
+          >
             <RefreshCcw className="w-3.5 h-3.5 mr-1.5" />
             刷新
           </Button>
@@ -684,7 +767,9 @@ export function ModelsTab() {
 
       {Object.keys(providers).length > 0 && (
         <section className="mb-6">
-          <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">已配置的提供商</h4>
+          <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">
+            已配置的提供商
+          </h4>
           <div className="space-y-2">
             {Object.entries(providers).map(([pname, provider]) => (
               <ProviderCard
@@ -701,7 +786,9 @@ export function ModelsTab() {
       )}
 
       <section>
-        <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">模型目录</h4>
+        <h4 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">
+          模型目录
+        </h4>
         {grouped.size === 0 ? (
           <div className="text-center py-8 text-sm text-text-tertiary">
             {search ? "没有找到匹配的模型" : "暂无可用模型"}
@@ -712,21 +799,32 @@ export function ModelsTab() {
               <div key={provider}>
                 <div className="flex items-center gap-2 mb-2">
                   <Bot className="w-3.5 h-3.5 text-text-tertiary" />
-                  <span className="text-xs font-medium text-text-secondary capitalize">{provider}</span>
+                  <span className="text-xs font-medium text-text-secondary capitalize">
+                    {provider}
+                  </span>
                   <span className="text-[10px] text-text-tertiary">({models.length})</span>
                 </div>
                 <div className="bg-surface-subtle rounded-md divide-y divide-border-light">
                   {models.map((model) => (
-                    <div key={model.id} className="flex items-center justify-between px-3 py-2 text-xs">
+                    <div
+                      key={model.id}
+                      className="flex items-center justify-between px-3 py-2 text-xs"
+                    >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span className="font-mono text-text-primary truncate">{model.id}</span>
                         {model.reasoning && (
-                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">reasoning</span>
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0">
+                            reasoning
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0 text-text-tertiary">
                         {model.contextWindow && (
-                          <span>{model.contextWindow >= 1000 ? `${Math.round(model.contextWindow / 1000)}K ctx` : `${model.contextWindow} ctx`}</span>
+                          <span>
+                            {model.contextWindow >= 1000
+                              ? `${Math.round(model.contextWindow / 1000)}K ctx`
+                              : `${model.contextWindow} ctx`}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -740,7 +838,8 @@ export function ModelsTab() {
 
       <div className="mt-6 pt-4 border-t border-border-light">
         <p className="text-xs text-text-tertiary">
-          模型配置存储在 <code className="bg-surface-subtle px-1 rounded">~/.openclaw/config.json5</code> 的 
+          模型配置存储在{" "}
+          <code className="bg-surface-subtle px-1 rounded">~/.openclaw/config.json5</code> 的
           <code className="bg-surface-subtle px-1 rounded">models.providers</code> 中。
         </p>
       </div>
@@ -756,7 +855,9 @@ export function ModelsTab() {
         <RemoveProviderDialog
           open={!!removeTarget}
           providerName={removeTarget}
-          onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+          onOpenChange={(open) => {
+            if (!open) setRemoveTarget(null);
+          }}
           onConfirm={() => void handleRemoveProvider(removeTarget)}
           isRemoving={isRemoving}
         />

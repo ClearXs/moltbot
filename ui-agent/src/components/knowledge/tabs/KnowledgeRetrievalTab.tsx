@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { KnowledgeSearchResult } from "@/services/knowledgeApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { KnowledgeSearchResult } from "@/services/knowledgeApi";
 import { knowledgeSearch } from "@/services/knowledgeApi";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -15,6 +15,7 @@ interface KnowledgeRetrievalTabProps {
 export function KnowledgeRetrievalTab({ onOpenDocument }: KnowledgeRetrievalTabProps) {
   const sessionKey = useSessionStore((state) => state.activeSessionKey);
   const activeKbId = useKnowledgeBaseStore((state) => state.activeKbId);
+  const baseSettings = useKnowledgeBaseStore((state) => state.baseSettings);
   const setSearchResults = useKnowledgeBaseStore((state) => state.setSearchResults);
   const navigateToSearchResult = useKnowledgeBaseStore((state) => state.navigateToSearchResult);
   const [query, setQuery] = useState("");
@@ -23,6 +24,9 @@ export function KnowledgeRetrievalTab({ onOpenDocument }: KnowledgeRetrievalTabP
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const effectiveLimit = baseSettings
+    ? Math.max(1, Math.min(limit, baseSettings.retrieval.topK))
+    : limit;
 
   if (!activeKbId) {
     return (
@@ -44,7 +48,7 @@ export function KnowledgeRetrievalTab({ onOpenDocument }: KnowledgeRetrievalTabP
     try {
       const data = await knowledgeSearch({
         query: trimmed,
-        limit,
+        limit: effectiveLimit,
         sessionKey: sessionKey ?? undefined,
         kbId: activeKbId,
       });
@@ -63,6 +67,15 @@ export function KnowledgeRetrievalTab({ onOpenDocument }: KnowledgeRetrievalTabP
     <div className="space-y-lg">
       <div className="rounded-xl border border-border-light p-lg">
         <div className="text-sm font-semibold text-text-primary mb-sm">检索测试</div>
+        {baseSettings ? (
+          <div className="mb-sm rounded-md border border-border-light bg-background-secondary px-sm py-xs text-[11px] text-text-secondary">
+            生效参数：模式 {baseSettings.retrieval.mode} · TopK {baseSettings.retrieval.topK} ·
+            最小分数 {baseSettings.retrieval.minScore}
+            {baseSettings.retrieval.mode === "hybrid"
+              ? ` · Hybrid Alpha ${baseSettings.retrieval.hybridAlpha}`
+              : ""}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-sm md:flex-row md:items-center">
           <div className="flex-1">
             <Input
@@ -83,11 +96,15 @@ export function KnowledgeRetrievalTab({ onOpenDocument }: KnowledgeRetrievalTabP
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
             >
-              {[5, 10, 20].map((size) => (
-                <option key={size} value={size}>
-                  {size} 条
-                </option>
-              ))}
+              {[5, 10, 20, effectiveLimit]
+                .filter((size) => !baseSettings || size <= baseSettings.retrieval.topK)
+                .sort((a, b) => a - b)
+                .filter((size, index, all) => all.indexOf(size) === index)
+                .map((size) => (
+                  <option key={size} value={size}>
+                    {size} 条
+                  </option>
+                ))}
             </select>
             <Button size="sm" onClick={() => void handleSearch()} disabled={isLoading}>
               {isLoading ? "检索中..." : "开始检索"}

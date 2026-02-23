@@ -162,7 +162,13 @@ export async function signDevicePayload(
   payload: string,
 ): Promise<string> {
   const keyData = base64UrlDecode(privateKeyBase64Url);
-  const key = await crypto.subtle.importKey("pkcs8", keyData, { name: "Ed25519" }, false, ["sign"]);
+  const keyBuffer = keyData.buffer.slice(
+    keyData.byteOffset,
+    keyData.byteOffset + keyData.byteLength,
+  ) as ArrayBuffer;
+  const key = await crypto.subtle.importKey("pkcs8", keyBuffer, { name: "Ed25519" }, false, [
+    "sign",
+  ]);
   const signature = await crypto.subtle.sign("Ed25519", key, new TextEncoder().encode(payload));
   return base64UrlEncode(signature);
 }

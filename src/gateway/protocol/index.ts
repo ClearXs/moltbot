@@ -72,6 +72,25 @@ import {
   ConfigSchemaResponseSchema,
   type ConfigSetParams,
   ConfigSetParamsSchema,
+  type ConnectorsDeleteParams,
+  ConnectorsDeleteParamsSchema,
+  type ConnectorsListParams,
+  ConnectorsListParamsSchema,
+  type ConnectorsListResult,
+  type ConnectorsOAuthCompleteParams,
+  ConnectorsOAuthCompleteParamsSchema,
+  type ConnectorsOAuthStartParams,
+  ConnectorsOAuthStartParamsSchema,
+  type ConnectorsOAuthStatusParams,
+  ConnectorsOAuthStatusParamsSchema,
+  type ConnectorsOAuthStatusResult,
+  type ConnectorsSessionGetParams,
+  ConnectorsSessionGetParamsSchema,
+  type ConnectorsSessionGetResult,
+  type ConnectorsSessionSetParams,
+  ConnectorsSessionSetParamsSchema,
+  type ConnectorsUpsertParams,
+  ConnectorsUpsertParamsSchema,
   type ConnectParams,
   ConnectParamsSchema,
   type CronAddParams,
@@ -305,6 +324,30 @@ export const validateConfigSetParams = ajv.compile<ConfigSetParams>(ConfigSetPar
 export const validateConfigApplyParams = ajv.compile<ConfigApplyParams>(ConfigApplyParamsSchema);
 export const validateConfigPatchParams = ajv.compile<ConfigPatchParams>(ConfigPatchParamsSchema);
 export const validateConfigSchemaParams = ajv.compile<ConfigSchemaParams>(ConfigSchemaParamsSchema);
+export const validateConnectorsListParams = ajv.compile<ConnectorsListParams>(
+  ConnectorsListParamsSchema,
+);
+export const validateConnectorsUpsertParams = ajv.compile<ConnectorsUpsertParams>(
+  ConnectorsUpsertParamsSchema,
+);
+export const validateConnectorsDeleteParams = ajv.compile<ConnectorsDeleteParams>(
+  ConnectorsDeleteParamsSchema,
+);
+export const validateConnectorsOAuthStartParams = ajv.compile<ConnectorsOAuthStartParams>(
+  ConnectorsOAuthStartParamsSchema,
+);
+export const validateConnectorsOAuthCompleteParams = ajv.compile<ConnectorsOAuthCompleteParams>(
+  ConnectorsOAuthCompleteParamsSchema,
+);
+export const validateConnectorsOAuthStatusParams = ajv.compile<ConnectorsOAuthStatusParams>(
+  ConnectorsOAuthStatusParamsSchema,
+);
+export const validateConnectorsSessionGetParams = ajv.compile<ConnectorsSessionGetParams>(
+  ConnectorsSessionGetParamsSchema,
+);
+export const validateConnectorsSessionSetParams = ajv.compile<ConnectorsSessionSetParams>(
+  ConnectorsSessionSetParamsSchema,
+);
 export const validateWizardStartParams = ajv.compile<WizardStartParams>(WizardStartParamsSchema);
 export const validateWizardNextParams = ajv.compile<WizardNextParams>(WizardNextParamsSchema);
 export const validateWizardCancelParams = ajv.compile<WizardCancelParams>(WizardCancelParamsSchema);
@@ -454,6 +497,14 @@ export {
   ConfigPatchParamsSchema,
   ConfigSchemaParamsSchema,
   ConfigSchemaResponseSchema,
+  ConnectorsListParamsSchema,
+  ConnectorsUpsertParamsSchema,
+  ConnectorsDeleteParamsSchema,
+  ConnectorsOAuthStartParamsSchema,
+  ConnectorsOAuthCompleteParamsSchema,
+  ConnectorsOAuthStatusParamsSchema,
+  ConnectorsSessionGetParamsSchema,
+  ConnectorsSessionSetParamsSchema,
   WizardStartParamsSchema,
   WizardNextParamsSchema,
   WizardCancelParamsSchema,
@@ -542,6 +593,17 @@ export type {
   ConfigPatchParams,
   ConfigSchemaParams,
   ConfigSchemaResponse,
+  ConnectorsListParams,
+  ConnectorsListResult,
+  ConnectorsUpsertParams,
+  ConnectorsDeleteParams,
+  ConnectorsOAuthStartParams,
+  ConnectorsOAuthCompleteParams,
+  ConnectorsOAuthStatusParams,
+  ConnectorsOAuthStatusResult,
+  ConnectorsSessionGetParams,
+  ConnectorsSessionGetResult,
+  ConnectorsSessionSetParams,
   WizardStartParams,
   WizardNextParams,
   WizardCancelParams,

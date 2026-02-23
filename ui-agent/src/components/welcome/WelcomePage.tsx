@@ -206,10 +206,10 @@ export function WelcomePage({
               <div
                 className={`flex flex-wrap gap-xs ${compact ? "" : "items-center justify-center"}`}
               >
-                {section.items.map((prompt, index) => (
+                {section.items.map((item, index) => (
                   <button
                     key={`${section.title}-${index}`}
-                    onClick={() => handleSelect(prompt)}
+                    onClick={() => handleSelect(item.title)}
                     className={`text-xs transition-colors px-sm py-xs hover:underline ${
                       section.isEmpty
                         ? "text-text-tertiary/70 cursor-default"
@@ -217,7 +217,7 @@ export function WelcomePage({
                     }`}
                     disabled={section.isEmpty}
                   >
-                    {prompt}
+                    {item.title}
                   </button>
                 ))}
               </div>

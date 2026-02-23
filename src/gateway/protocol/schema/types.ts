@@ -53,6 +53,20 @@ import type {
   UpdateRunParamsSchema,
 } from "./config.js";
 import type {
+  ConnectorsDeleteParamsSchema,
+  ConnectorsListParamsSchema,
+  ConnectorsListResultSchema,
+  ConnectorsOAuthCompleteParamsSchema,
+  ConnectorsOAuthStartParamsSchema,
+  ConnectorsOAuthStartResultSchema,
+  ConnectorsOAuthStatusParamsSchema,
+  ConnectorsOAuthStatusResultSchema,
+  ConnectorsSessionGetParamsSchema,
+  ConnectorsSessionGetResultSchema,
+  ConnectorsSessionSetParamsSchema,
+  ConnectorsUpsertParamsSchema,
+} from "./connectors.js";
+import type {
   CronAddParamsSchema,
   CronJobSchema,
   CronListParamsSchema,
@@ -177,6 +191,18 @@ export type ConfigApplyParams = Static<typeof ConfigApplyParamsSchema>;
 export type ConfigPatchParams = Static<typeof ConfigPatchParamsSchema>;
 export type ConfigSchemaParams = Static<typeof ConfigSchemaParamsSchema>;
 export type ConfigSchemaResponse = Static<typeof ConfigSchemaResponseSchema>;
+export type ConnectorsListParams = Static<typeof ConnectorsListParamsSchema>;
+export type ConnectorsListResult = Static<typeof ConnectorsListResultSchema>;
+export type ConnectorsUpsertParams = Static<typeof ConnectorsUpsertParamsSchema>;
+export type ConnectorsDeleteParams = Static<typeof ConnectorsDeleteParamsSchema>;
+export type ConnectorsOAuthStartParams = Static<typeof ConnectorsOAuthStartParamsSchema>;
+export type ConnectorsOAuthStartResult = Static<typeof ConnectorsOAuthStartResultSchema>;
+export type ConnectorsOAuthCompleteParams = Static<typeof ConnectorsOAuthCompleteParamsSchema>;
+export type ConnectorsOAuthStatusParams = Static<typeof ConnectorsOAuthStatusParamsSchema>;
+export type ConnectorsOAuthStatusResult = Static<typeof ConnectorsOAuthStatusResultSchema>;
+export type ConnectorsSessionGetParams = Static<typeof ConnectorsSessionGetParamsSchema>;
+export type ConnectorsSessionGetResult = Static<typeof ConnectorsSessionGetResultSchema>;
+export type ConnectorsSessionSetParams = Static<typeof ConnectorsSessionSetParamsSchema>;
 export type WizardStartParams = Static<typeof WizardStartParamsSchema>;
 export type WizardNextParams = Static<typeof WizardNextParamsSchema>;
 export type WizardCancelParams = Static<typeof WizardCancelParamsSchema>;

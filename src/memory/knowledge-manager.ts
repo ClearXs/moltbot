@@ -1,14 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import type { OpenClawConfig } from "../config/config.js";
-import type {
-  KnowledgeBaseEntry,
-  KnowledgeBaseSettings,
-  KnowledgeDocument,
-  KnowledgeGraphRun,
-} from "./knowledge-schema.js";
+import type { DatabaseSync } from "node:sqlite";
 import { resolveAgentDir } from "../agents/agent-scope.js";
 import { resolveKnowledgeConfig } from "../agents/knowledge-config.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { hashText } from "./internal.js";
 import {
@@ -19,6 +13,17 @@ import {
   type KnowledgeGraphTripleInput,
 } from "./knowledge-graph.js";
 import { ProcessorRegistry, type ProcessorOptions } from "./knowledge-processor.js";
+import type {
+  KnowledgeBaseEntry,
+  KnowledgeBaseRuntimeSettings,
+  KnowledgeBaseSettingsEntry,
+  KnowledgeBaseSettings,
+  KnowledgeChunkConfig,
+  KnowledgeDocument,
+  KnowledgeGraphRun,
+  KnowledgeIndexConfig,
+  KnowledgeRetrievalConfig,
+} from "./knowledge-schema.js";
 import { ensureKnowledgeSchema } from "./knowledge-schema.js";
 import { KnowledgeStorageManager } from "./knowledge-storage.js";
 import { MemoryIndexManager } from "./manager.js";
@@ -109,6 +114,8 @@ export type KnowledgeBaseCreateParams = {
   description?: string;
   icon?: string;
   visibility?: "private" | "team" | "public";
+  tags?: KnowledgeBaseTagInput[];
+  settings?: Partial<KnowledgeBaseRuntimeSettings>;
 };
 
 export type KnowledgeBaseUpdateParams = {
@@ -117,6 +124,23 @@ export type KnowledgeBaseUpdateParams = {
   description?: string;
   icon?: string;
   visibility?: "private" | "team" | "public";
+  tags?: KnowledgeBaseTagInput[];
+};
+
+export type KnowledgeBaseTagInput = {
+  name: string;
+  color?: string;
+};
+
+export type KnowledgeBaseTag = {
+  tagId: string;
+  name: string;
+  color: string | null;
+};
+
+export type KnowledgeBaseWithMeta = KnowledgeBaseEntry & {
+  tags: KnowledgeBaseTag[];
+  settings: KnowledgeBaseRuntimeSettings;
 };
 
 export type KnowledgeBaseDeleteResult = {
@@ -141,6 +165,34 @@ export type UpdateKnowledgeSettingsParams = {
   vectorization?: Partial<KnowledgeVectorizationSettings>;
   graph?: Partial<KnowledgeGraphSettingsState>;
 };
+
+const DEFAULT_CHUNK_CONFIG: KnowledgeChunkConfig = {
+  enabled: true,
+  size: 800,
+  overlap: 120,
+  separator: "auto",
+};
+
+const DEFAULT_RETRIEVAL_CONFIG: KnowledgeRetrievalConfig = {
+  mode: "hybrid",
+  topK: 5,
+  minScore: 0.35,
+  hybridAlpha: 0.5,
+};
+
+const DEFAULT_INDEX_CONFIG: KnowledgeIndexConfig = {
+  mode: "balanced",
+};
+
+const DEFAULT_BASE_GRAPH_CONFIG = {
+  enabled: false,
+} as const;
+
+const DEFAULT_BASE_VECTORIZATION_CONFIG = {
+  enabled: true,
+} as const;
+
+const DEFAULT_TAG_COLOR = "#64748b";
 
 /**
  * High-level knowledge base manager coordinating storage, processing, and indexing
@@ -189,7 +241,7 @@ export class KnowledgeManager {
     return this.getConfig(agentId) !== null;
   }
 
-  createBase(params: { agentId: string } & KnowledgeBaseCreateParams): KnowledgeBaseEntry {
+  createBase(params: { agentId: string } & KnowledgeBaseCreateParams): KnowledgeBaseWithMeta {
     const config = this.getConfig(params.agentId);
     if (!config) {
       throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
@@ -222,7 +274,13 @@ export class KnowledgeManager {
         now,
         now,
       );
-    return this.getBaseById(params.agentId, kbId) as KnowledgeBaseEntry;
+    this.upsertBaseSettings({
+      agentId: params.agentId,
+      kbId,
+      settings: params.settings,
+    });
+    this.setBaseTags(params.agentId, kbId, params.tags ?? []);
+    return this.getBaseWithMetaById(params.agentId, kbId) as KnowledgeBaseWithMeta;
   }
 
   listBases(params: {
@@ -232,7 +290,7 @@ export class KnowledgeManager {
     search?: string;
     visibility?: "private" | "team" | "public";
     tags?: string[];
-  }): { total: number; returned: number; offset: number; kbs: KnowledgeBaseEntry[] } {
+  }): { total: number; returned: number; offset: number; kbs: KnowledgeBaseWithMeta[] } {
     const config = this.getConfig(params.agentId);
     if (!config) {
       throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
@@ -241,10 +299,14 @@ export class KnowledgeManager {
       agentId: params.agentId,
       search: params.search,
       visibility: params.visibility,
+      tags: params.tags,
     });
     const offset = Math.max(0, params.offset ?? 0);
     const limit = Math.max(1, params.limit ?? 50);
-    const paged = rows.slice(offset, offset + limit);
+    const paged = rows
+      .slice(offset, offset + limit)
+      .map((row) => this.getBaseWithMetaById(params.agentId, row.id))
+      .filter(Boolean) as KnowledgeBaseWithMeta[];
     return {
       total: rows.length,
       returned: paged.length,
@@ -253,12 +315,12 @@ export class KnowledgeManager {
     };
   }
 
-  getBase(agentId: string, kbId?: string): KnowledgeBaseEntry | null {
+  getBase(agentId: string, kbId?: string): KnowledgeBaseWithMeta | null {
     if (kbId) {
-      return this.getBaseById(agentId, kbId);
+      return this.getBaseWithMetaById(agentId, kbId);
     }
     const bases = this.listBaseEntries({ agentId });
-    return bases.length === 1 ? bases[0] : null;
+    return bases.length === 1 ? this.getBaseWithMetaById(agentId, bases[0].id) : null;
   }
 
   getBaseById(agentId: string, kbId: string): KnowledgeBaseEntry | null {
@@ -271,7 +333,7 @@ export class KnowledgeManager {
     return row ?? null;
   }
 
-  updateBase(params: { agentId: string } & KnowledgeBaseUpdateParams): KnowledgeBaseEntry {
+  updateBase(params: { agentId: string } & KnowledgeBaseUpdateParams): KnowledgeBaseWithMeta {
     const config = this.getConfig(params.agentId);
     if (!config) {
       throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
@@ -305,7 +367,10 @@ export class KnowledgeManager {
         now,
         base.id,
       );
-    return this.getBaseById(params.agentId, params.kbId) as KnowledgeBaseEntry;
+    if (params.tags) {
+      this.setBaseTags(params.agentId, params.kbId, params.tags);
+    }
+    return this.getBaseWithMetaById(params.agentId, params.kbId) as KnowledgeBaseWithMeta;
   }
 
   deleteBase(params: { agentId: string; kbId: string }): KnowledgeBaseDeleteResult {
@@ -315,6 +380,157 @@ export class KnowledgeManager {
     }
     this.db.prepare(`DELETE FROM kb_bases WHERE id = ?`).run(base.id);
     return { success: true };
+  }
+
+  getBaseSettings(params: { agentId: string; kbId: string }): KnowledgeBaseRuntimeSettings {
+    this.resolveBaseIdForAgent({ agentId: params.agentId, kbId: params.kbId });
+    return this.getBaseSettingsById(params.agentId, params.kbId);
+  }
+
+  updateBaseSettings(params: {
+    agentId: string;
+    kbId: string;
+    settings: Partial<KnowledgeBaseRuntimeSettings>;
+  }): KnowledgeBaseRuntimeSettings {
+    this.resolveBaseIdForAgent({ agentId: params.agentId, kbId: params.kbId });
+    this.upsertBaseSettings({
+      agentId: params.agentId,
+      kbId: params.kbId,
+      settings: params.settings,
+    });
+    return this.getBaseSettingsById(params.agentId, params.kbId);
+  }
+
+  listTags(agentId: string): KnowledgeBaseTag[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, name, color
+         FROM kb_tag_defs
+         WHERE owner_agent_id = ?
+         ORDER BY name COLLATE NOCASE ASC`,
+      )
+      .all(agentId) as Array<{ id: string; name: string; color?: string | null }>;
+    return rows.map((row) => ({
+      tagId: row.id,
+      name: row.name,
+      color: row.color ?? null,
+    }));
+  }
+
+  createTag(params: { agentId: string; name: string; color?: string }): KnowledgeBaseTag {
+    const normalizedName = params.name.trim();
+    if (!normalizedName) {
+      throw new Error("tag name is required");
+    }
+    const existing = this.getTagByName(params.agentId, normalizedName);
+    if (existing) {
+      throw new Error("tag already exists");
+    }
+    const now = Date.now();
+    const tagId = hashText(`${params.agentId}:tag:${normalizedName}:${now}`);
+    this.db
+      .prepare(
+        `INSERT INTO kb_tag_defs (id, owner_agent_id, name, color, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(tagId, params.agentId, normalizedName, normalizeTagColor(params.color), now, now);
+    return {
+      tagId,
+      name: normalizedName,
+      color: normalizeTagColor(params.color),
+    };
+  }
+
+  updateTag(params: {
+    agentId: string;
+    tagId: string;
+    name?: string;
+    color?: string;
+  }): KnowledgeBaseTag {
+    const row = this.db
+      .prepare(
+        `SELECT id, name, color
+         FROM kb_tag_defs
+         WHERE id = ? AND owner_agent_id = ?`,
+      )
+      .get(params.tagId, params.agentId) as
+      | { id: string; name: string; color?: string | null }
+      | undefined;
+    if (!row) {
+      throw new Error("tag not found");
+    }
+    const nextName = params.name?.trim() || row.name;
+    if (!nextName) {
+      throw new Error("tag name is required");
+    }
+    const duplicate = this.getTagByName(params.agentId, nextName);
+    if (duplicate && duplicate.id !== row.id) {
+      throw new Error("tag already exists");
+    }
+    const nextColor =
+      params.color === undefined ? (row.color ?? null) : normalizeTagColor(params.color);
+    const now = Date.now();
+    this.db
+      .prepare(
+        `UPDATE kb_tag_defs
+         SET name = ?, color = ?, updated_at = ?
+         WHERE id = ? AND owner_agent_id = ?`,
+      )
+      .run(nextName, nextColor, now, params.tagId, params.agentId);
+    return {
+      tagId: params.tagId,
+      name: nextName,
+      color: nextColor,
+    };
+  }
+
+  deleteTag(params: { agentId: string; tagId: string }): { success: boolean } {
+    const exists = this.db
+      .prepare(`SELECT id FROM kb_tag_defs WHERE id = ? AND owner_agent_id = ?`)
+      .get(params.tagId, params.agentId) as { id: string } | undefined;
+    if (!exists) {
+      return { success: false };
+    }
+    this.db
+      .prepare(`DELETE FROM kb_tag_defs WHERE id = ? AND owner_agent_id = ?`)
+      .run(params.tagId, params.agentId);
+    return { success: true };
+  }
+
+  bindTagsToBase(params: { agentId: string; kbId: string; tagIds: string[] }): KnowledgeBaseTag[] {
+    this.resolveBaseIdForAgent({ agentId: params.agentId, kbId: params.kbId });
+    const uniqueTagIds = Array.from(
+      new Set(params.tagIds.map((item) => item.trim()).filter(Boolean)),
+    );
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO kb_base_tags (kb_id, tag_id, owner_agent_id, created_at)
+       VALUES (?, ?, ?, ?)`,
+    );
+    const now = Date.now();
+    for (const tagId of uniqueTagIds) {
+      this.assertTagOwnership(params.agentId, tagId);
+      insert.run(params.kbId, tagId, params.agentId, now);
+    }
+    return this.getBaseTags(params.agentId, params.kbId);
+  }
+
+  unbindTagsFromBase(params: {
+    agentId: string;
+    kbId: string;
+    tagIds: string[];
+  }): KnowledgeBaseTag[] {
+    this.resolveBaseIdForAgent({ agentId: params.agentId, kbId: params.kbId });
+    const uniqueTagIds = Array.from(
+      new Set(params.tagIds.map((item) => item.trim()).filter(Boolean)),
+    );
+    const del = this.db.prepare(
+      `DELETE FROM kb_base_tags
+       WHERE kb_id = ? AND owner_agent_id = ? AND tag_id = ?`,
+    );
+    for (const tagId of uniqueTagIds) {
+      del.run(params.kbId, params.agentId, tagId);
+    }
+    return this.getBaseTags(params.agentId, params.kbId);
   }
 
   getSettings(agentId: string): KnowledgeSettings {
@@ -369,6 +585,9 @@ export class KnowledgeManager {
       : {};
     const nextVector = { ...vectorOverrides, ...params.vectorization };
     const nextGraph = { ...graphOverrides, ...params.graph };
+    if (nextGraph.extractor && nextGraph.extractor !== "llm") {
+      throw new Error("graph extractor is invalid, only 'llm' is supported");
+    }
     const updatedAt = Date.now();
     this.db
       .prepare(
@@ -481,8 +700,13 @@ export class KnowledgeManager {
     // Index document if auto-indexing is enabled
     let indexed = false;
     const settings = this.getSettings(params.agentId);
+    const baseSettings = this.getBaseSettingsById(params.agentId, kbId);
     if (config.search.autoIndex && extractedText) {
-      if (config.search.includeInMemorySearch && settings.vectorization.enabled) {
+      if (
+        config.search.includeInMemorySearch &&
+        settings.vectorization.enabled &&
+        baseSettings.vectorization.enabled
+      ) {
         try {
           const memoryManager = await MemoryIndexManager.get({
             cfg: this.cfg,
@@ -518,7 +742,7 @@ export class KnowledgeManager {
       }
     }
 
-    if (settings.graph.enabled && extractedText) {
+    if (baseSettings.graph.enabled && extractedText) {
       try {
         await this.extractGraphForDocument({
           agentId: params.agentId,
@@ -653,8 +877,13 @@ export class KnowledgeManager {
 
     let indexed = false;
     const settings = this.getSettings(params.agentId);
+    const baseSettings = this.getBaseSettingsById(params.agentId, kbId);
     if (config.search.autoIndex && extractedText) {
-      if (config.search.includeInMemorySearch && settings.vectorization.enabled) {
+      if (
+        config.search.includeInMemorySearch &&
+        settings.vectorization.enabled &&
+        baseSettings.vectorization.enabled
+      ) {
         try {
           const memoryManager = await MemoryIndexManager.get({
             cfg: this.cfg,
@@ -690,7 +919,7 @@ export class KnowledgeManager {
       }
     }
 
-    if (settings.graph.enabled && extractedText) {
+    if (baseSettings.graph.enabled && extractedText) {
       try {
         await this.extractGraphForDocument({
           agentId: params.agentId,
@@ -1367,26 +1596,236 @@ export class KnowledgeManager {
     agentId: string;
     search?: string;
     visibility?: "private" | "team" | "public";
+    tags?: string[];
   }): KnowledgeBaseEntry[] {
-    const conditions: string[] = ["owner_agent_id = ?"];
+    const conditions: string[] = ["b.owner_agent_id = ?"];
     const values: (string | number)[] = [params.agentId];
+    const joins: string[] = [];
     if (params.visibility) {
-      conditions.push("visibility = ?");
+      conditions.push("b.visibility = ?");
       values.push(params.visibility);
     }
     if (params.search) {
-      conditions.push("(name LIKE ? OR description LIKE ?)");
+      conditions.push("(b.name LIKE ? OR b.description LIKE ?)");
       const like = `%${params.search}%`;
       values.push(like, like);
     }
+    if (params.tags && params.tags.length > 0) {
+      const normalizedTags = Array.from(
+        new Set(params.tags.map((tag) => tag.trim()).filter(Boolean)),
+      );
+      if (normalizedTags.length > 0) {
+        joins.push(`INNER JOIN kb_base_tags bt ON b.id = bt.kb_id`);
+        joins.push(
+          `INNER JOIN kb_tag_defs td ON td.id = bt.tag_id AND td.owner_agent_id = b.owner_agent_id`,
+        );
+        const placeholders = normalizedTags.map(() => "?").join(", ");
+        conditions.push(`td.name IN (${placeholders})`);
+        values.push(...normalizedTags);
+      }
+    }
     const rows = this.db
       .prepare(
-        `SELECT id, owner_agent_id, name, description, icon, visibility, created_at, updated_at
-         FROM kb_bases WHERE ${conditions.join(" AND ")}
-         ORDER BY updated_at DESC`,
+        `SELECT DISTINCT b.id, b.owner_agent_id, b.name, b.description, b.icon, b.visibility, b.created_at, b.updated_at
+         FROM kb_bases b
+         ${joins.join("\n")}
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY b.updated_at DESC`,
       )
       .all(...values) as KnowledgeBaseEntry[];
     return rows;
+  }
+
+  private getBaseWithMetaById(agentId: string, kbId: string): KnowledgeBaseWithMeta | null {
+    const base = this.getBaseById(agentId, kbId);
+    if (!base) {
+      return null;
+    }
+    return {
+      ...base,
+      tags: this.getBaseTags(agentId, kbId),
+      settings: this.getBaseSettingsById(agentId, kbId),
+    };
+  }
+
+  private getBaseTags(agentId: string, kbId: string): KnowledgeBaseTag[] {
+    const rows = this.db
+      .prepare(
+        `SELECT td.id, td.name, td.color
+         FROM kb_base_tags bt
+         INNER JOIN kb_tag_defs td ON td.id = bt.tag_id
+         WHERE bt.owner_agent_id = ? AND bt.kb_id = ?
+         ORDER BY td.name COLLATE NOCASE ASC`,
+      )
+      .all(agentId, kbId) as Array<{ id: string; name: string; color?: string | null }>;
+    return rows.map((row) => ({
+      tagId: row.id,
+      name: row.name,
+      color: row.color ?? null,
+    }));
+  }
+
+  private getBaseSettingsById(agentId: string, kbId: string): KnowledgeBaseRuntimeSettings {
+    const row = this.db
+      .prepare(
+        `SELECT kb_id, owner_agent_id, vectorization_config, chunk_config, retrieval_config, index_config, graph_config, created_at, updated_at
+         FROM kb_base_settings
+         WHERE owner_agent_id = ? AND kb_id = ?`,
+      )
+      .get(agentId, kbId) as KnowledgeBaseSettingsEntry | undefined;
+    const vectorization = row?.vectorization_config
+      ? mergeBaseVectorizationConfig(
+          parseJson<Partial<{ enabled: boolean }>>(row.vectorization_config),
+        )
+      : DEFAULT_BASE_VECTORIZATION_CONFIG;
+    const chunk = row?.chunk_config
+      ? mergeChunkConfig(parseJson<Partial<KnowledgeChunkConfig>>(row.chunk_config))
+      : DEFAULT_CHUNK_CONFIG;
+    const retrieval = row?.retrieval_config
+      ? mergeRetrievalConfig(parseJson<Partial<KnowledgeRetrievalConfig>>(row.retrieval_config))
+      : DEFAULT_RETRIEVAL_CONFIG;
+    const index = row?.index_config
+      ? mergeIndexConfig(parseJson<Partial<KnowledgeIndexConfig>>(row.index_config))
+      : DEFAULT_INDEX_CONFIG;
+    const graph = row?.graph_config
+      ? mergeBaseGraphConfig(parseJson<Partial<{ enabled: boolean }>>(row.graph_config))
+      : DEFAULT_BASE_GRAPH_CONFIG;
+    return {
+      vectorization,
+      chunk,
+      retrieval,
+      index,
+      graph,
+    };
+  }
+
+  private upsertBaseSettings(params: {
+    agentId: string;
+    kbId: string;
+    settings?: Partial<KnowledgeBaseRuntimeSettings>;
+  }): void {
+    const current = this.getBaseSettingsById(params.agentId, params.kbId);
+    const vectorization = mergeBaseVectorizationConfig(
+      params.settings?.vectorization ?? current.vectorization,
+    );
+    const chunk = mergeChunkConfig(params.settings?.chunk ?? current.chunk);
+    const retrieval = mergeRetrievalConfig(params.settings?.retrieval ?? current.retrieval);
+    const index = mergeIndexConfig(params.settings?.index ?? current.index);
+    const graph = mergeBaseGraphConfig(params.settings?.graph ?? current.graph);
+    validateChunkConfig(chunk);
+    validateRetrievalConfig(retrieval);
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO kb_base_settings
+         (kb_id, owner_agent_id, vectorization_config, chunk_config, retrieval_config, index_config, graph_config, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(kb_id) DO UPDATE SET
+           vectorization_config = excluded.vectorization_config,
+           chunk_config = excluded.chunk_config,
+           retrieval_config = excluded.retrieval_config,
+           index_config = excluded.index_config,
+           graph_config = excluded.graph_config,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        params.kbId,
+        params.agentId,
+        JSON.stringify(vectorization),
+        JSON.stringify(chunk),
+        JSON.stringify(retrieval),
+        JSON.stringify(index),
+        JSON.stringify(graph),
+        now,
+        now,
+      );
+  }
+
+  private setBaseTags(agentId: string, kbId: string, tags: KnowledgeBaseTagInput[]): void {
+    const normalized = normalizeTagInputs(tags);
+    const desiredTagIds: string[] = [];
+    for (const tag of normalized) {
+      const tagId = this.ensureTagDef(agentId, tag);
+      desiredTagIds.push(tagId);
+    }
+
+    const existingRows = this.db
+      .prepare(
+        `SELECT tag_id
+         FROM kb_base_tags
+         WHERE owner_agent_id = ? AND kb_id = ?`,
+      )
+      .all(agentId, kbId) as Array<{ tag_id: string }>;
+    const existing = new Set(existingRows.map((row) => row.tag_id));
+    const desired = new Set(desiredTagIds);
+
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO kb_base_tags (kb_id, tag_id, owner_agent_id, created_at)
+       VALUES (?, ?, ?, ?)`,
+    );
+    const remove = this.db.prepare(
+      `DELETE FROM kb_base_tags
+       WHERE kb_id = ? AND owner_agent_id = ? AND tag_id = ?`,
+    );
+    const now = Date.now();
+    for (const tagId of desired) {
+      if (!existing.has(tagId)) {
+        insert.run(kbId, tagId, agentId, now);
+      }
+    }
+    for (const tagId of existing) {
+      if (!desired.has(tagId)) {
+        remove.run(kbId, agentId, tagId);
+      }
+    }
+  }
+
+  private ensureTagDef(agentId: string, tag: KnowledgeBaseTagInput): string {
+    const existing = this.getTagByName(agentId, tag.name);
+    if (existing) {
+      const nextColor = normalizeTagColor(tag.color) ?? existing.color ?? DEFAULT_TAG_COLOR;
+      if ((existing.color ?? null) !== nextColor) {
+        this.db
+          .prepare(
+            `UPDATE kb_tag_defs
+             SET color = ?, updated_at = ?
+             WHERE id = ? AND owner_agent_id = ?`,
+          )
+          .run(nextColor, Date.now(), existing.id, agentId);
+      }
+      return existing.id;
+    }
+    const now = Date.now();
+    const tagId = hashText(`${agentId}:tag:${tag.name}:${now}`);
+    this.db
+      .prepare(
+        `INSERT INTO kb_tag_defs (id, owner_agent_id, name, color, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(tagId, agentId, tag.name, normalizeTagColor(tag.color) ?? DEFAULT_TAG_COLOR, now, now);
+    return tagId;
+  }
+
+  private getTagByName(
+    agentId: string,
+    tagName: string,
+  ): { id: string; name: string; color?: string | null } | undefined {
+    return this.db
+      .prepare(
+        `SELECT id, name, color
+         FROM kb_tag_defs
+         WHERE owner_agent_id = ? AND name = ?`,
+      )
+      .get(agentId, tagName) as { id: string; name: string; color?: string | null } | undefined;
+  }
+
+  private assertTagOwnership(agentId: string, tagId: string): void {
+    const row = this.db
+      .prepare(`SELECT id FROM kb_tag_defs WHERE id = ? AND owner_agent_id = ?`)
+      .get(tagId, agentId) as { id: string } | undefined;
+    if (!row) {
+      throw new Error(`tag not found: ${tagId}`);
+    }
   }
 
   private resolveBaseIdForAgent(params: { agentId: string; kbId?: string | null }): string {
@@ -1495,6 +1934,103 @@ function estimateTokens(text: string): number {
 
 function isVisibility(value: string): value is "private" | "team" | "public" {
   return value === "private" || value === "team" || value === "public";
+}
+
+function parseJson<T>(value: string): T {
+  return JSON.parse(value) as T;
+}
+
+function mergeChunkConfig(input: Partial<KnowledgeChunkConfig>): KnowledgeChunkConfig {
+  return {
+    enabled: input.enabled ?? DEFAULT_CHUNK_CONFIG.enabled,
+    size: input.size ?? DEFAULT_CHUNK_CONFIG.size,
+    overlap: input.overlap ?? DEFAULT_CHUNK_CONFIG.overlap,
+    separator: input.separator ?? DEFAULT_CHUNK_CONFIG.separator,
+  };
+}
+
+function mergeRetrievalConfig(input: Partial<KnowledgeRetrievalConfig>): KnowledgeRetrievalConfig {
+  return {
+    mode: input.mode ?? DEFAULT_RETRIEVAL_CONFIG.mode,
+    topK: input.topK ?? DEFAULT_RETRIEVAL_CONFIG.topK,
+    minScore: input.minScore ?? DEFAULT_RETRIEVAL_CONFIG.minScore,
+    hybridAlpha: input.hybridAlpha ?? DEFAULT_RETRIEVAL_CONFIG.hybridAlpha,
+  };
+}
+
+function mergeIndexConfig(input: Partial<KnowledgeIndexConfig>): KnowledgeIndexConfig {
+  return {
+    mode: input.mode ?? DEFAULT_INDEX_CONFIG.mode,
+  };
+}
+
+function mergeBaseGraphConfig(input: Partial<{ enabled: boolean }>): { enabled: boolean } {
+  return {
+    enabled: input.enabled ?? DEFAULT_BASE_GRAPH_CONFIG.enabled,
+  };
+}
+
+function mergeBaseVectorizationConfig(input: Partial<{ enabled: boolean }>): { enabled: boolean } {
+  return {
+    enabled: input.enabled ?? DEFAULT_BASE_VECTORIZATION_CONFIG.enabled,
+  };
+}
+
+function validateChunkConfig(chunk: KnowledgeChunkConfig): void {
+  if (chunk.size < 200 || chunk.size > 4000) {
+    throw new Error("chunk.size must be between 200 and 4000");
+  }
+  if (chunk.overlap < 0 || chunk.overlap > 1000) {
+    throw new Error("chunk.overlap must be between 0 and 1000");
+  }
+  if (chunk.overlap >= chunk.size) {
+    throw new Error("chunk.overlap must be less than chunk.size");
+  }
+  if (!["auto", "paragraph", "sentence"].includes(chunk.separator)) {
+    throw new Error("chunk.separator is invalid");
+  }
+}
+
+function validateRetrievalConfig(retrieval: KnowledgeRetrievalConfig): void {
+  if (!["semantic", "keyword", "hybrid"].includes(retrieval.mode)) {
+    throw new Error("retrieval.mode is invalid");
+  }
+  if (retrieval.topK < 1 || retrieval.topK > 20) {
+    throw new Error("retrieval.topK must be between 1 and 20");
+  }
+  if (retrieval.minScore < 0 || retrieval.minScore > 1) {
+    throw new Error("retrieval.minScore must be between 0 and 1");
+  }
+  if (retrieval.hybridAlpha < 0 || retrieval.hybridAlpha > 1) {
+    throw new Error("retrieval.hybridAlpha must be between 0 and 1");
+  }
+}
+
+function normalizeTagInputs(tags: KnowledgeBaseTagInput[]): KnowledgeBaseTagInput[] {
+  const dedup = new Map<string, KnowledgeBaseTagInput>();
+  for (const tag of tags) {
+    const name = tag.name.trim();
+    if (!name) {
+      continue;
+    }
+    dedup.set(name, { name, color: normalizeTagColor(tag.color) ?? DEFAULT_TAG_COLOR });
+  }
+  return Array.from(dedup.values());
+}
+
+function normalizeTagColor(value?: string): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  const color = value.trim();
+  if (!color) {
+    return null;
+  }
+  const match = color.match(/^#([0-9a-fA-F]{6})$/);
+  if (!match) {
+    throw new Error("tag color must be in #RRGGBB format");
+  }
+  return `#${match[1].toLowerCase()}`;
 }
 
 type GraphFilter = {

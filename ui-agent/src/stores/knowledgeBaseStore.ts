@@ -4,19 +4,27 @@ import type {
   KnowledgeDetail,
   KnowledgeDocument,
   KnowledgeBase,
+  KnowledgeBaseRuntimeSettings,
+  KnowledgeBaseTag,
   KnowledgeSearchResult,
   KnowledgeSettingsResponse,
 } from "@/services/knowledgeApi";
 import {
+  createKnowledgeTag,
   createKnowledgeBase,
+  deleteKnowledgeTag,
   deleteKnowledgeBase,
   getKnowledgeBase,
+  getKnowledgeBaseSettings,
   deleteKnowledge,
   getKnowledge,
   listKnowledge,
   listKnowledgeBases,
+  listKnowledgeTags,
   listKnowledgeChunks,
   updateKnowledgeBase,
+  updateKnowledgeBaseSettings,
+  updateKnowledgeTag,
   updateKnowledgeMetadata,
   uploadKnowledge,
   getKnowledgeSettings,
@@ -61,8 +69,14 @@ interface KnowledgeBaseState {
   activeChunkId: string | null;
   isLoadingChunks: boolean;
   settings: KnowledgeSettingsResponse | null;
+  baseSettings: KnowledgeBaseRuntimeSettings | null;
+  availableTags: KnowledgeBaseTag[];
   isLoadingSettings: boolean;
   isUpdatingSettings: boolean;
+  isLoadingBaseSettings: boolean;
+  isUpdatingBaseSettings: boolean;
+  isLoadingTags: boolean;
+  isUpdatingTags: boolean;
   searchResults: KnowledgeSearchResult[];
   searchQuery: string;
   targetChunkId: string | null;
@@ -73,6 +87,7 @@ interface KnowledgeBaseState {
     limit?: number;
     search?: string;
     visibility?: "private" | "team" | "public";
+    tags?: string[];
   }) => Promise<void>;
   selectKb: (kbId: string | null) => Promise<void>;
   createKb: (params: {
@@ -80,6 +95,8 @@ interface KnowledgeBaseState {
     description?: string;
     icon?: string;
     visibility?: "private" | "team" | "public";
+    tags?: { name: string; color?: string }[];
+    settings?: Partial<KnowledgeBaseRuntimeSettings>;
   }) => Promise<void>;
   updateKb: (params: {
     kbId: string;
@@ -87,6 +104,7 @@ interface KnowledgeBaseState {
     description?: string;
     icon?: string;
     visibility?: "private" | "team" | "public";
+    tags?: { name: string; color?: string }[];
   }) => Promise<void>;
   deleteKb: (kbId: string) => Promise<void>;
 
@@ -104,6 +122,14 @@ interface KnowledgeBaseState {
     vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
     graph?: Partial<KnowledgeSettingsResponse["graph"]>;
   }) => Promise<void>;
+  loadBaseSettings: () => Promise<void>;
+  updateBaseSettings: (params: {
+    settings: Partial<KnowledgeBaseRuntimeSettings>;
+  }) => Promise<void>;
+  loadAvailableTags: () => Promise<void>;
+  createAvailableTag: (params: { name: string; color?: string }) => Promise<void>;
+  updateAvailableTag: (params: { tagId: string; name?: string; color?: string }) => Promise<void>;
+  deleteAvailableTag: (tagId: string) => Promise<void>;
   setTags: (tags: string[]) => void;
   setSearchResults: (results: KnowledgeSearchResult[], query: string) => void;
   clearSearch: () => void;
@@ -153,8 +179,14 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
   activeChunkId: null,
   isLoadingChunks: false,
   settings: null,
+  baseSettings: null,
+  availableTags: [],
   isLoadingSettings: false,
   isUpdatingSettings: false,
+  isLoadingBaseSettings: false,
+  isUpdatingBaseSettings: false,
+  isLoadingTags: false,
+  isUpdatingTags: false,
   searchResults: [],
   searchQuery: "",
   targetChunkId: null,
@@ -171,6 +203,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
         offset: nextOffset,
         search: params?.search,
         visibility: params?.visibility,
+        tags: params?.tags,
       });
       const kbsById: Record<string, KnowledgeBase> = {};
       const kbIds = result.kbs.map((kb) => {
@@ -194,6 +227,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
       set({
         activeKbId: null,
         kbDetail: null,
+        baseSettings: null,
         documentsById: {},
         documentIds: [],
         total: 0,
@@ -215,6 +249,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
     set({
       activeKbId: kbId,
       isLoadingKbDetail: true,
+      isLoadingBaseSettings: true,
       documentsById: {},
       documentIds: [],
       total: 0,
@@ -233,9 +268,11 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
     });
     try {
       const kbDetail = await getKnowledgeBase(kbId);
+      const baseSettings = await getKnowledgeBaseSettings(kbId);
       set({ kbDetail });
+      set({ baseSettings: baseSettings.settings });
     } finally {
-      set({ isLoadingKbDetail: false });
+      set({ isLoadingKbDetail: false, isLoadingBaseSettings: false });
     }
   },
 
@@ -387,6 +424,78 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
       set({ settings });
     } finally {
       set({ isUpdatingSettings: false });
+    }
+  },
+
+  loadBaseSettings: async () => {
+    const { activeKbId } = get();
+    if (!activeKbId) {
+      set({ baseSettings: null });
+      return;
+    }
+    set({ isLoadingBaseSettings: true });
+    try {
+      const result = await getKnowledgeBaseSettings(activeKbId);
+      set({ baseSettings: result.settings });
+    } finally {
+      set({ isLoadingBaseSettings: false });
+    }
+  },
+
+  updateBaseSettings: async ({ settings }) => {
+    const { activeKbId } = get();
+    if (!activeKbId) {
+      return;
+    }
+    set({ isUpdatingBaseSettings: true });
+    try {
+      const result = await updateKnowledgeBaseSettings({ kbId: activeKbId, settings });
+      set({ baseSettings: result.settings });
+    } finally {
+      set({ isUpdatingBaseSettings: false });
+    }
+  },
+
+  loadAvailableTags: async () => {
+    set({ isLoadingTags: true });
+    try {
+      const result = await listKnowledgeTags();
+      set({ availableTags: result.tags });
+    } finally {
+      set({ isLoadingTags: false });
+    }
+  },
+
+  createAvailableTag: async (params) => {
+    set({ isUpdatingTags: true });
+    try {
+      await createKnowledgeTag(params);
+      const result = await listKnowledgeTags();
+      set({ availableTags: result.tags });
+    } finally {
+      set({ isUpdatingTags: false });
+    }
+  },
+
+  updateAvailableTag: async (params) => {
+    set({ isUpdatingTags: true });
+    try {
+      await updateKnowledgeTag(params);
+      const result = await listKnowledgeTags();
+      set({ availableTags: result.tags });
+    } finally {
+      set({ isUpdatingTags: false });
+    }
+  },
+
+  deleteAvailableTag: async (tagId) => {
+    set({ isUpdatingTags: true });
+    try {
+      await deleteKnowledgeTag(tagId);
+      const result = await listKnowledgeTags();
+      set({ availableTags: result.tags });
+    } finally {
+      set({ isUpdatingTags: false });
     }
   },
 

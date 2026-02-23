@@ -193,6 +193,7 @@ export const SkillsInstallParamsSchema = Type.Object(
   {
     name: NonEmptyString,
     installId: NonEmptyString,
+    version: Type.Optional(NonEmptyString),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
   },
   { additionalProperties: false },

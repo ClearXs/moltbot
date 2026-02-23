@@ -1,20 +1,12 @@
 "use client";
 
-import { Book, Database, Folder, Lightbulb, Shield } from "lucide-react";
+import { getKnowledgeIconOption } from "@/components/knowledge/iconRegistry";
 import type { KnowledgeBase } from "@/services/knowledgeApi";
 
 interface KnowledgeBaseCardProps {
   kb?: KnowledgeBase;
   onClick?: () => void;
 }
-
-const iconMap = {
-  book: Book,
-  database: Database,
-  folder: Folder,
-  lightbulb: Lightbulb,
-  shield: Shield,
-} as const;
 
 const visibilityLabel: Record<string, string> = {
   private: "仅自己",
@@ -24,10 +16,13 @@ const visibilityLabel: Record<string, string> = {
 
 export function KnowledgeBaseCard({ kb, onClick }: KnowledgeBaseCardProps) {
   if (!kb) return null;
-  const Icon = (kb.icon && iconMap[kb.icon as keyof typeof iconMap]) || Book;
+  const iconOption = getKnowledgeIconOption(kb.icon);
+  const Icon = iconOption.Icon;
   const visibilityText = kb.visibility
     ? (visibilityLabel[kb.visibility] ?? kb.visibility)
     : "未设置权限";
+  const createdText = kb.createdAt ? new Date(kb.createdAt).toLocaleDateString("zh-CN") : "未知";
+  const documentCount = kb.documentCount ?? 0;
 
   return (
     <button
@@ -48,8 +43,9 @@ export function KnowledgeBaseCard({ kb, onClick }: KnowledgeBaseCardProps) {
       <div className="text-[11px] text-text-secondary mt-2 line-clamp-2">
         {kb.description || "暂无描述"}
       </div>
-      <div className="text-[10px] text-text-tertiary mt-2">
-        更新于 {new Date(kb.updatedAt).toLocaleDateString("zh-CN")}
+      <div className="mt-2 flex items-center gap-sm text-[10px] text-text-tertiary">
+        <span>文档 {documentCount}</span>
+        <span>创建于 {createdText}</span>
       </div>
     </button>
   );

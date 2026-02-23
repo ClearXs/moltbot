@@ -60,6 +60,45 @@ export function ensureKnowledgeSchema(db: DatabaseSync): void {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS kb_base_settings (
+      kb_id TEXT PRIMARY KEY,
+      owner_agent_id TEXT NOT NULL,
+      vectorization_config TEXT NOT NULL,
+      chunk_config TEXT NOT NULL,
+      retrieval_config TEXT NOT NULL,
+      index_config TEXT NOT NULL,
+      graph_config TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (kb_id) REFERENCES kb_bases(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kb_tag_defs (
+      id TEXT PRIMARY KEY,
+      owner_agent_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(owner_agent_id, name)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kb_base_tags (
+      kb_id TEXT NOT NULL,
+      tag_id TEXT NOT NULL,
+      owner_agent_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (kb_id, tag_id),
+      FOREIGN KEY (kb_id) REFERENCES kb_bases(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES kb_tag_defs(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS knowledge_graph_runs (
       id TEXT PRIMARY KEY,
       kb_id TEXT NOT NULL,
@@ -110,6 +149,12 @@ export function ensureKnowledgeSchema(db: DatabaseSync): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_documents_uploaded ON kb_documents(uploaded_at DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_settings_agent ON kb_settings(owner_agent_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_bases_agent ON kb_bases(owner_agent_id)`);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_kb_base_settings_agent ON kb_base_settings(owner_agent_id)`,
+  );
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_tag_defs_agent ON kb_tag_defs(owner_agent_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_base_tags_agent ON kb_base_tags(owner_agent_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_base_tags_tag ON kb_base_tags(tag_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_graph_runs_kb ON knowledge_graph_runs(kb_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_graph_runs_doc ON knowledge_graph_runs(document_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_graph_triples_kb ON knowledge_graph_triples(kb_id)`);
@@ -123,6 +168,12 @@ export function ensureKnowledgeSchema(db: DatabaseSync): void {
   );
 
   ensureColumn(db, "kb_documents", "kb_id", "TEXT");
+  ensureColumn(
+    db,
+    "kb_base_settings",
+    "vectorization_config",
+    `TEXT NOT NULL DEFAULT '{"enabled":true}'`,
+  );
 }
 
 /**
@@ -170,9 +221,69 @@ export type KnowledgeBaseEntry = {
   updated_at: number;
 };
 
+export type KnowledgeBaseTagDefinition = {
+  id: string;
+  owner_agent_id: string;
+  name: string;
+  color?: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type KnowledgeBaseTagBinding = {
+  kb_id: string;
+  tag_id: string;
+  owner_agent_id: string;
+  created_at: number;
+};
+
+export type KnowledgeChunkConfig = {
+  enabled: boolean;
+  size: number;
+  overlap: number;
+  separator: "auto" | "paragraph" | "sentence";
+};
+
+export type KnowledgeRetrievalConfig = {
+  mode: "semantic" | "keyword" | "hybrid";
+  topK: number;
+  minScore: number;
+  hybridAlpha: number;
+};
+
+export type KnowledgeIndexConfig = {
+  mode: "high_quality" | "balanced";
+};
+
+export type KnowledgeBaseGraphConfig = {
+  enabled: boolean;
+};
+
+export type KnowledgeBaseRuntimeSettings = {
+  vectorization: {
+    enabled: boolean;
+  };
+  chunk: KnowledgeChunkConfig;
+  retrieval: KnowledgeRetrievalConfig;
+  index: KnowledgeIndexConfig;
+  graph: KnowledgeBaseGraphConfig;
+};
+
+export type KnowledgeBaseSettingsEntry = {
+  kb_id: string;
+  owner_agent_id: string;
+  vectorization_config: string;
+  chunk_config: string;
+  retrieval_config: string;
+  index_config: string;
+  graph_config: string;
+  created_at: number;
+  updated_at: number;
+};
+
 function ensureColumn(
   db: DatabaseSync,
-  table: "kb_documents",
+  table: "kb_documents" | "kb_base_settings",
   column: string,
   definition: string,
 ): void {

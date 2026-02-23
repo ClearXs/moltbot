@@ -17,7 +17,6 @@ import {
   ExternalLink,
   Search,
   FileText,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -87,6 +86,63 @@ interface SkillStatusReport {
   skills: SkillStatusEntry[];
 }
 
+interface ClawHubSkillListItem {
+  slug: string;
+  displayName: string;
+  summary?: string;
+  updatedAt?: number;
+  latestVersion?: {
+    version?: string;
+  };
+  stats?: {
+    downloads?: number;
+    stars?: number;
+  };
+}
+
+interface ClawHubSearchItem {
+  slug: string;
+  displayName: string;
+  summary?: string;
+  version?: string;
+  updatedAt?: number;
+}
+
+interface ClawHubBrowseItem {
+  slug: string;
+  displayName: string;
+  summary: string;
+  version?: string;
+  updatedAt?: number;
+  downloads?: number;
+  stars?: number;
+}
+
+interface InstallHistoryEntry {
+  id: string;
+  at: number;
+  source: string;
+  title: string;
+  status: "success" | "failed";
+  message: string;
+}
+
+function parseRetryAfterSeconds(message: string): number | null {
+  const match = message.match(/retry after\s+(\d+)s/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  const seconds = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+  return seconds;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Source badge                                                          */
 /* ------------------------------------------------------------------ */
@@ -96,16 +152,19 @@ function SourceBadge({ source }: { source: string }) {
     "openclaw-workspace": { bg: "bg-green-100", text: "text-green-700", label: "工作区" },
     "openclaw-bundled": { bg: "bg-blue-100", text: "text-blue-700", label: "内置" },
     "openclaw-installed": { bg: "bg-amber-100", text: "text-amber-700", label: "已安装" },
+    "openclaw-managed": { bg: "bg-orange-100", text: "text-orange-700", label: "托管" },
     "openclaw-extra": { bg: "bg-purple-100", text: "text-purple-700", label: "扩展" },
+    clawhub: { bg: "bg-cyan-100", text: "text-cyan-700", label: "ClawHub" },
   };
   const v = variants[source] ?? { bg: "bg-gray-100", text: "text-gray-600", label: source };
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${v.bg} ${v.text}`}>
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${v.bg} ${v.text}`}
+    >
       {v.label}
     </span>
   );
 }
-
 
 /* ------------------------------------------------------------------ */
 /*  Skill Code Preview Dialog                                            */
@@ -127,42 +186,52 @@ function SkillCodePreviewDialog({
 
   useEffect(() => {
     if (!open || !skill || !wsClient) {
-      setContent(null);
-      setError(null);
       return;
     }
+    let cancelled = false;
+    const loadCode = async () => {
+      setIsLoading(true);
+      setError(null);
+      setContent(null);
+      try {
+        const result = await wsClient.sendRequest<{ content: string; files?: string[] }>(
+          "skills.getCode",
+          {
+            skillKey: skill.skillKey,
+            filePath: "SKILL.md",
+          },
+        );
+        if (!cancelled) {
+          setContent(result?.content ?? "无法读取 SKILL.md 内容");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : "无法加载 Skill 代码预览";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+    void loadCode();
 
-    setIsLoading(true);
-    setError(null);
-
-    wsClient
-      .sendRequest<{ content: string; files?: string[] }>("skills.getCode", {
-        skillKey: skill.skillKey,
-        filePath: "SKILL.md",
-      })
-      .then((result) => {
-        setContent(result?.content ?? "无法读取 SKILL.md 内容");
-      })
-      .catch(() => {
-        setError("无法加载 Skill 代码预览 (skills.getCode API 可能未实现)");
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, skill, wsClient]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl h-[70vh] flex flex-col">
+      <DialogContent className="max-w-[48rem] h-[70vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4" />
             {skill?.emoji && <span>{skill.emoji}</span>}
             {skill?.name ?? "Skill"} - SKILL.md
           </DialogTitle>
-          <DialogDescription>
-            查看 Skill 定义文件,了解其功能和指令内容。
-          </DialogDescription>
+          <DialogDescription>查看 Skill 定义文件,了解其功能和指令内容。</DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden rounded-md border border-border-light bg-surface-subtle">
@@ -239,9 +308,7 @@ function SkillCard({
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
-          {skill.emoji && (
-            <span className="text-lg flex-shrink-0 mt-0.5">{skill.emoji}</span>
-          )}
+          {skill.emoji && <span className="text-lg flex-shrink-0 mt-0.5">{skill.emoji}</span>}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-medium text-text-primary">{skill.name}</span>
@@ -270,15 +337,16 @@ function SkillCard({
 
           {/* Toggle */}
           <label className="relative inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!skill.disabled}
-            onChange={(e) => onToggle(skill.skillKey, e.target.checked)}
-            disabled={!skill.eligible || skill.blockedByAllowlist}
-            className="sr-only peer"
-          />
-          <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary peer-disabled:opacity-40" />
-        </label>
+            <input
+              type="checkbox"
+              checked={!skill.disabled}
+              onChange={(e) => onToggle(skill.skillKey, e.target.checked)}
+              disabled={!skill.eligible || skill.blockedByAllowlist}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary peer-disabled:opacity-40" />
+          </label>
+        </div>
       </div>
 
       {/* Missing deps warning */}
@@ -296,9 +364,7 @@ function SkillCard({
               {skill.missing.config.length > 0 && (
                 <div>缺少配置: {skill.missing.config.join(", ")}</div>
               )}
-              {skill.missing.os.length > 0 && (
-                <div>不支持当前操作系统</div>
-              )}
+              {skill.missing.os.length > 0 && <div>不支持当前操作系统</div>}
             </div>
           </div>
         </div>
@@ -402,7 +468,7 @@ function InstallConfirmDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-[28rem]">
         <DialogHeader>
           <DialogTitle>确认安装 Skill?</DialogTitle>
           <DialogDescription>
@@ -411,9 +477,7 @@ function InstallConfirmDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {description && (
-            <p className="text-sm text-text-secondary">{description}</p>
-          )}
+          {description && <p className="text-sm text-text-secondary">{description}</p>}
 
           <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
             <div className="flex items-start gap-2">
@@ -473,12 +537,10 @@ function GitHubInstallDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-[28rem]">
         <DialogHeader>
           <DialogTitle>从 GitHub 安装 Skill</DialogTitle>
-          <DialogDescription>
-            输入包含 SKILL.md 的 GitHub 仓库 URL
-          </DialogDescription>
+          <DialogDescription>输入包含 SKILL.md 的 GitHub 仓库 URL</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-2">
@@ -489,9 +551,7 @@ function GitHubInstallDialog({
             className="h-9 text-sm"
             autoFocus
           />
-          {url && !isValid && (
-            <p className="text-xs text-error">请输入有效的 GitHub 仓库 URL</p>
-          )}
+          {url && !isValid && <p className="text-xs text-error">请输入有效的 GitHub 仓库 URL</p>}
         </div>
 
         <DialogFooter>
@@ -548,7 +608,7 @@ function LocalUploadDialog({
     setError(null);
 
     const skillMdFile = fileArray.find(
-      (f) => f.name === "SKILL.md" || f.webkitRelativePath.endsWith("/SKILL.md")
+      (f) => f.name === "SKILL.md" || f.webkitRelativePath.endsWith("/SKILL.md"),
     );
 
     if (!skillMdFile) {
@@ -574,11 +634,19 @@ function LocalUploadDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
-      <DialogContent className="max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) {
+          reset();
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="max-w-[28rem]">
         <DialogHeader>
           <DialogTitle>上传本地 Skill</DialogTitle>
-          <DialogDescription>选择包含 SKILL.md 的文件夹</DialogDescription>
+          <DialogDescription>选择包含 SKILL.md 的 Skill 文件夹</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -605,11 +673,43 @@ function LocalUploadDialog({
                 <Upload className="w-5 h-5 text-text-tertiary" />
                 <span className="text-xs text-text-tertiary">
                   {files.length > 0
-                    ? \`已选择 \${files.length} 个文件\`
-                    : "点击选择 Skill 文件夹"}
+                    ? `已选择 ${files.length} 个文件`
+                    : "拖拽文件夹到此处，或点击选择 Skill 文件夹"}
                 </span>
               </div>
             </Button>
+          </div>
+
+          <div className="space-y-2 text-sm text-text-secondary">
+            <div className="font-medium text-text-primary">文件要求</div>
+            <ul className="list-disc pl-5 space-y-1 text-text-secondary">
+              <li>.zip 或 .skill 文件（根目录包含 SKILL.md）</li>
+              <li>SKILL.md 包含 skill 名称与描述（YAML）</li>
+            </ul>
+            <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                <a
+                  href="https://agentskills.io/what-are-skills"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-primary"
+                >
+                  了解如何创建 Skills
+                </a>{" "}
+                或{" "}
+                <a
+                  href="/examples/example-skill.zip"
+                  download
+                  className="underline hover:text-primary"
+                >
+                  查看示例
+                </a>
+              </span>
+            </div>
+            <p className="text-[11px] text-text-tertiary">
+              当前上传方式为选择文件夹，示例 zip 仅用于参考 Skill 目录结构。
+            </p>
           </div>
 
           {error && (
@@ -638,15 +738,20 @@ function LocalUploadDialog({
                   {skillMdContent.length > 2000 && "\n\n... (内容已截断)"}
                 </pre>
               </div>
-              <p className="text-xs text-text-tertiary">
-                共 {files.length} 个文件
-              </p>
+              <p className="text-xs text-text-tertiary">共 {files.length} 个文件</p>
             </div>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => { reset(); onClose(); }}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+          >
             取消
           </Button>
           <Button
@@ -675,35 +780,271 @@ function LocalUploadDialog({
 function ClawHubDialog({
   open,
   onClose,
+  onInstall,
+  cooldownUntilBySlug,
 }: {
   open: boolean;
   onClose: () => void;
+  onInstall: (item: {
+    slug: string;
+    displayName: string;
+    summary?: string;
+    version?: string;
+  }) => void;
+  cooldownUntilBySlug: Record<string, number>;
 }) {
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<ClawHubBrowseItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  const trimmedQuery = query.trim();
+
+  const loadClawHubItems = useCallback(
+    async (opts?: { append?: boolean; cursor?: string | null }) => {
+      const append = opts?.append === true;
+      const cursor = opts?.cursor?.trim();
+
+      if (append) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
+      setError(null);
+
+      try {
+        const url = new URL(
+          trimmedQuery ? "/api/v1/search" : "/api/v1/skills",
+          "https://clawhub.ai",
+        );
+        if (trimmedQuery) {
+          url.searchParams.set("q", trimmedQuery);
+          url.searchParams.set("limit", "24");
+        } else {
+          url.searchParams.set("limit", "24");
+          if (cursor) {
+            url.searchParams.set("cursor", cursor);
+          }
+        }
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+          throw new Error(`ClawHub 请求失败 (${response.status})`);
+        }
+
+        if (trimmedQuery) {
+          const data = (await response.json()) as { results?: ClawHubSearchItem[] };
+          const mapped: ClawHubBrowseItem[] = (data.results ?? []).map((item) => ({
+            slug: item.slug,
+            displayName: item.displayName,
+            summary: item.summary ?? "暂无简介",
+            version: item.version,
+            updatedAt: item.updatedAt,
+          }));
+          setItems(mapped);
+          setNextCursor(null);
+          return;
+        }
+
+        const data = (await response.json()) as {
+          items?: ClawHubSkillListItem[];
+          nextCursor?: string | null;
+        };
+        const mapped: ClawHubBrowseItem[] = (data.items ?? []).map((item) => ({
+          slug: item.slug,
+          displayName: item.displayName,
+          summary: item.summary ?? "暂无简介",
+          version: item.latestVersion?.version,
+          updatedAt: item.updatedAt,
+          downloads: item.stats?.downloads,
+          stars: item.stats?.stars,
+        }));
+        setItems((prev) => (append ? [...prev, ...mapped] : mapped));
+        setNextCursor(data.nextCursor ?? null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "加载 ClawHub Skills 失败");
+      } finally {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
+    },
+    [trimmedQuery],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    void loadClawHubItems();
+  }, [open, loadClawHubItems]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void loadClawHubItems();
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [query, open, loadClawHubItems]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [open]);
+
+  const formatStat = (value?: number): string => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "0";
+    }
+    return Intl.NumberFormat("zh-CN", { notation: "compact" }).format(Math.max(0, value));
+  };
+
+  const formatTime = (ts?: number): string => {
+    if (!ts || !Number.isFinite(ts)) {
+      return "未知";
+    }
+    return new Date(ts).toLocaleDateString("zh-CN");
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl h-[70vh] flex flex-col">
+      <DialogContent className="max-w-[42rem] h-[70vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>从 ClawHub 浏览 Skills</DialogTitle>
-          <DialogDescription>
-            搜索并安装社区 Skills
-          </DialogDescription>
+          <DialogDescription>搜索并安装社区 Skills</DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <Globe className="w-12 h-12 text-text-tertiary mb-4" />
-          <p className="text-sm text-text-primary mb-2">ClawHub 集成</p>
-          <p className="text-xs text-text-tertiary max-w-sm mb-4">
-            正在接入 clawhub.ai 社区 Skills 注册表,完成后可直接搜索并安装社区共享的 Skills。
-          </p>
-          <a
-            href="https://clawhub.ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-primary hover:underline flex items-center gap-1"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            访问 ClawHub.ai
-          </a>
+        <div className="flex-1 flex flex-col min-h-0 gap-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-tertiary" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索 ClawHub Skills..."
+                className="h-8 text-xs pl-8"
+              />
+            </div>
+            <a
+              href="https://clawhub.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              打开官网
+            </a>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-auto rounded-md border border-border-light bg-surface-subtle">
+            {isLoading && items.length === 0 ? (
+              <div className="h-full flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-text-tertiary animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-center p-6">
+                <AlertCircle className="w-7 h-7 text-error" />
+                <p className="text-sm text-text-primary">加载失败</p>
+                <p className="text-xs text-text-tertiary">{error}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => void loadClawHubItems()}
+                >
+                  重试
+                </Button>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-center p-6">
+                <Globe className="w-8 h-8 text-text-tertiary" />
+                <p className="text-sm text-text-primary">未找到技能</p>
+                <p className="text-xs text-text-tertiary">尝试更换关键词或清空搜索</p>
+              </div>
+            ) : (
+              <div className="p-3 space-y-2">
+                {items.map((item) => (
+                  <div
+                    key={item.slug}
+                    className="rounded-md border border-border-light bg-white p-3"
+                  >
+                    {(() => {
+                      const cooldownUntil = cooldownUntilBySlug[item.slug] ?? 0;
+                      const remainingSeconds =
+                        cooldownUntil > nowMs
+                          ? Math.max(1, Math.ceil((cooldownUntil - nowMs) / 1000))
+                          : 0;
+                      const inCooldown = remainingSeconds > 0;
+                      return (
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-text-primary">
+                                {item.displayName}
+                              </span>
+                              <span className="text-[10px] text-text-tertiary bg-surface-subtle px-1.5 py-0.5 rounded">
+                                {item.slug}
+                              </span>
+                              {item.version && (
+                                <span className="text-[10px] text-text-tertiary bg-surface-subtle px-1.5 py-0.5 rounded">
+                                  v{item.version}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-text-tertiary mt-1 line-clamp-2">
+                              {item.summary}
+                            </p>
+                            <div className="mt-2 text-[11px] text-text-tertiary flex items-center gap-3">
+                              <span>下载 {formatStat(item.downloads)}</span>
+                              <span>点赞 {formatStat(item.stars)}</span>
+                              <span>更新 {formatTime(item.updatedAt)}</span>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs whitespace-nowrap"
+                            disabled={inCooldown}
+                            onClick={() => onInstall(item)}
+                          >
+                            <Download className="w-3 h-3 mr-1" />
+                            {inCooldown ? `重试 ${remainingSeconds}s` : "安装"}
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!trimmedQuery && nextCursor && (
+            <div className="flex justify-center">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={isLoadingMore}
+                onClick={() => void loadClawHubItems({ append: true, cursor: nextCursor })}
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    加载中...
+                  </>
+                ) : (
+                  "加载更多"
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -739,9 +1080,26 @@ export function SkillsTab() {
     title: string;
     source: string;
     description: string;
-    action: () => Promise<void>;
+    action: () => Promise<string | void>;
   } | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
+  const [clawhubCooldownUntilBySlug, setClawhubCooldownUntilBySlug] = useState<
+    Record<string, number>
+  >({});
+  const [installHistory, setInstallHistory] = useState<InstallHistoryEntry[]>([]);
+
+  const appendInstallHistory = useCallback((entry: Omit<InstallHistoryEntry, "id" | "at">) => {
+    setInstallHistory((prev) =>
+      [
+        {
+          ...entry,
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          at: Date.now(),
+        },
+        ...prev,
+      ].slice(0, 12),
+    );
+  }, []);
 
   // Load skills status
   const loadSkills = useCallback(async () => {
@@ -802,6 +1160,7 @@ export function SkillsTab() {
           );
           if (result?.ok) {
             addToast({ title: "安装成功", description: result.message || "依赖已安装" });
+            return result.message || "依赖已安装";
           } else {
             throw new Error(result?.message || "安装失败");
           }
@@ -856,10 +1215,99 @@ export function SkillsTab() {
             title: "安装成功",
             description: "Skill 已从 GitHub 安装",
           });
+          return "Skill 已从 GitHub 安装";
         },
       });
     },
     [wsClient, addToast],
+  );
+
+  // ClawHub install
+  const handleClawHubInstall = useCallback(
+    (item: { slug: string; displayName: string; summary?: string; version?: string }) => {
+      setClawhubOpen(false);
+      setConfirmInstall({
+        title: item.displayName,
+        source: "clawhub",
+        description: `从 ClawHub 安装 "${item.slug}"${item.version ? ` (v${item.version})` : ""}${item.summary ? `\n\n${item.summary}` : ""}`,
+        action: async () => {
+          if (!wsClient) return;
+          const now = Date.now();
+          const cooldownUntil = clawhubCooldownUntilBySlug[item.slug] ?? 0;
+          if (cooldownUntil > now) {
+            const seconds = Math.max(1, Math.ceil((cooldownUntil - now) / 1000));
+            throw new Error(`ClawHub 请求过于频繁，请在 ${seconds}s 后重试`);
+          }
+          let result: { ok: boolean; message: string } | undefined;
+          try {
+            try {
+              result = await wsClient.sendRequest<{ ok: boolean; message: string }>(
+                "skills.install",
+                {
+                  name: item.slug,
+                  version: item.version,
+                  installId: "clawhub",
+                  timeoutMs: 120000,
+                },
+              );
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              const versionUnsupported =
+                message.includes("unexpected property 'version'") ||
+                message.includes('unexpected property "version"');
+              if (!versionUnsupported) {
+                throw err;
+              }
+              result = await wsClient.sendRequest<{ ok: boolean; message: string }>(
+                "skills.install",
+                {
+                  name: item.slug,
+                  installId: "clawhub",
+                  timeoutMs: 120000,
+                },
+              );
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const retryAfterSeconds = parseRetryAfterSeconds(message);
+            if (retryAfterSeconds) {
+              setClawhubCooldownUntilBySlug((prev) => ({
+                ...prev,
+                [item.slug]: Date.now() + retryAfterSeconds * 1000,
+              }));
+            }
+            throw err;
+          }
+          if (result?.ok) {
+            const successMessage = result.message || "Skill 已从 ClawHub 安装";
+            addToast({
+              title: "安装成功",
+              description: successMessage,
+            });
+            setClawhubCooldownUntilBySlug((prev) => {
+              if (!(item.slug in prev)) {
+                return prev;
+              }
+              const next = { ...prev };
+              delete next[item.slug];
+              return next;
+            });
+            return successMessage;
+          } else {
+            const message = result?.message || "安装失败";
+            const retryAfterSeconds = parseRetryAfterSeconds(message);
+            if (retryAfterSeconds) {
+              setClawhubCooldownUntilBySlug((prev) => ({
+                ...prev,
+                [item.slug]: Date.now() + retryAfterSeconds * 1000,
+              }));
+            }
+            throw new Error(message);
+          }
+        },
+      });
+    },
+    [wsClient, addToast, clawhubCooldownUntilBySlug],
   );
 
   // Local upload
@@ -869,7 +1317,7 @@ export function SkillsTab() {
       setConfirmInstall({
         title: skillName,
         source: "local-upload",
-        description: \`上传本地 Skill "\${skillName}" (\${files.length} 个文件)\`,
+        description: `上传本地 Skill "${skillName}" (${files.length} 个文件)`,
         action: async () => {
           if (!wsClient) return;
           try {
@@ -880,13 +1328,18 @@ export function SkillsTab() {
             });
             addToast({
               title: "上传成功",
-              description: \`Skill "\${skillName}" 已上传\`,
+              description: `Skill "${skillName}" 已上传`,
             });
+            return `Skill "${skillName}" 已上传`;
           } catch (err) {
             const msg = err instanceof Error ? err.message : "";
-            if (msg.includes("not found") || msg.includes("unknown method") || msg.includes("not implemented")) {
+            if (
+              msg.includes("not found") ||
+              msg.includes("unknown method") ||
+              msg.includes("not implemented")
+            ) {
               throw new Error(
-                \`后端暂不支持通过 WebSocket 上传 Skill。请将 Skill 文件夹手动复制到 \${status?.managedSkillsDir ?? "~/.openclaw/skills/"} 目录下,然后刷新 Skills 列表。\`
+                `后端暂不支持通过 WebSocket 上传 Skill。请将 Skill 文件夹手动复制到 ${status?.managedSkillsDir ?? "~/.openclaw/skills/"} 目录下,然后刷新 Skills 列表。`,
               );
             }
             throw err;
@@ -901,13 +1354,28 @@ export function SkillsTab() {
   const handleConfirmInstall = async () => {
     if (!confirmInstall) return;
     setIsInstalling(true);
+    const source = confirmInstall.source;
+    const title = confirmInstall.title;
     try {
-      await confirmInstall.action();
+      const successMessage = (await confirmInstall.action()) || "安装成功";
+      appendInstallHistory({
+        source,
+        title,
+        status: "success",
+        message: successMessage,
+      });
       void loadSkills();
     } catch (err) {
+      const message = err instanceof Error ? err.message : "未知错误";
+      appendInstallHistory({
+        source,
+        title,
+        status: "failed",
+        message,
+      });
       addToast({
         title: "安装失败",
-        description: err instanceof Error ? err.message : "未知错误",
+        description: message,
         variant: "error",
       });
     } finally {
@@ -916,24 +1384,50 @@ export function SkillsTab() {
     }
   };
 
+  const formatHistoryTime = (ts: number): string =>
+    new Date(ts).toLocaleTimeString("zh-CN", { hour12: false });
+
   // Filter skills
-  const filteredSkills = status?.skills.filter((s) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      s.name.toLowerCase().includes(q) ||
-      s.description.toLowerCase().includes(q) ||
-      s.skillKey.toLowerCase().includes(q)
-    );
-  }) ?? [];
+  const filteredSkills =
+    status?.skills.filter((s) => {
+      if (!searchQuery) return true;
+      const qRaw = searchQuery.toLowerCase();
+      const qNorm = normalizeSearchText(searchQuery);
+      const nameRaw = s.name.toLowerCase();
+      const descRaw = s.description.toLowerCase();
+      const keyRaw = s.skillKey.toLowerCase();
+      const nameNorm = normalizeSearchText(s.name);
+      const descNorm = normalizeSearchText(s.description);
+      const keyNorm = normalizeSearchText(s.skillKey);
+      return (
+        nameRaw.includes(qRaw) ||
+        descRaw.includes(qRaw) ||
+        keyRaw.includes(qRaw) ||
+        nameNorm.includes(qNorm) ||
+        descNorm.includes(qNorm) ||
+        keyNorm.includes(qNorm)
+      );
+    }) ?? [];
 
   // Group skills by source
   const grouped = {
     workspace: filteredSkills.filter((s) => s.source === "openclaw-workspace"),
     bundled: filteredSkills.filter((s) => s.source === "openclaw-bundled"),
-    installed: filteredSkills.filter((s) => s.source === "openclaw-installed" || s.source === "openclaw-extra"),
+    installed: filteredSkills.filter(
+      (s) =>
+        s.source === "openclaw-installed" ||
+        s.source === "openclaw-extra" ||
+        s.source === "openclaw-managed",
+    ),
     other: filteredSkills.filter(
-      (s) => !["openclaw-workspace", "openclaw-bundled", "openclaw-installed", "openclaw-extra"].includes(s.source),
+      (s) =>
+        ![
+          "openclaw-workspace",
+          "openclaw-bundled",
+          "openclaw-installed",
+          "openclaw-extra",
+          "openclaw-managed",
+        ].includes(s.source),
     ),
   };
 
@@ -966,7 +1460,7 @@ export function SkillsTab() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 max-w-[24rem]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-tertiary" />
           <Input
             value={searchQuery}
@@ -1002,12 +1496,10 @@ export function SkillsTab() {
                 上传本地 Skill
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setGithubOpen(true)}>
-                <Github className="w-4 h-4 mr-2" />
-                从 GitHub 安装
+                <Github className="w-4 h-4 mr-2" />从 GitHub 安装
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setClawhubOpen(true)}>
-                <Globe className="w-4 h-4 mr-2" />
-                从 ClawHub 浏览
+                <Globe className="w-4 h-4 mr-2" />从 ClawHub 浏览
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1021,6 +1513,31 @@ export function SkillsTab() {
         <span>可用 {status?.skills.filter((s) => s.eligible).length ?? 0}</span>
       </div>
 
+      {installHistory.length > 0 && (
+        <div className="rounded-md border border-border-light bg-surface-subtle p-3">
+          <div className="text-xs font-semibold text-text-secondary mb-2">安装历史</div>
+          <div className="space-y-1.5">
+            {installHistory.map((entry) => (
+              <div key={entry.id} className="flex items-center gap-2 text-xs text-text-secondary">
+                <span className="text-text-tertiary w-14">{formatHistoryTime(entry.at)}</span>
+                <SourceBadge source={entry.source} />
+                <span
+                  className={
+                    entry.status === "success"
+                      ? "text-green-700 min-w-[36px]"
+                      : "text-red-700 min-w-[36px]"
+                  }
+                >
+                  {entry.status === "success" ? "成功" : "失败"}
+                </span>
+                <span className="text-text-primary truncate max-w-[14rem]">{entry.title}</span>
+                <span className="text-text-tertiary truncate">{entry.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Skills list by group */}
       {filteredSkills.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -1029,22 +1546,50 @@ export function SkillsTab() {
             {searchQuery ? "未找到匹配的 Skills" : "暂无已安装的 Skills"}
           </p>
           <p className="text-xs text-text-tertiary">
-            {searchQuery ? "尝试修改搜索关键词" : "点击 \"添加 Skill\" 开始安装"}
+            {searchQuery ? "尝试修改搜索关键词" : '点击 "添加 Skill" 开始安装'}
           </p>
         </div>
       ) : (
         <div className="space-y-6">
           {grouped.workspace.length > 0 && (
-            <SkillGroup title="工作区 Skills" skills={grouped.workspace} onToggle={handleToggle} onInstall={handleInstall} onSetApiKey={handleSetApiKey} onPreviewCode={setPreviewSkill} />
+            <SkillGroup
+              title="工作区 Skills"
+              skills={grouped.workspace}
+              onToggle={handleToggle}
+              onInstall={handleInstall}
+              onSetApiKey={handleSetApiKey}
+              onPreviewCode={setPreviewSkill}
+            />
           )}
           {grouped.bundled.length > 0 && (
-            <SkillGroup title="内置 Skills" skills={grouped.bundled} onToggle={handleToggle} onInstall={handleInstall} onSetApiKey={handleSetApiKey} onPreviewCode={setPreviewSkill} />
+            <SkillGroup
+              title="内置 Skills"
+              skills={grouped.bundled}
+              onToggle={handleToggle}
+              onInstall={handleInstall}
+              onSetApiKey={handleSetApiKey}
+              onPreviewCode={setPreviewSkill}
+            />
           )}
           {grouped.installed.length > 0 && (
-            <SkillGroup title="已安装 Skills" skills={grouped.installed} onToggle={handleToggle} onInstall={handleInstall} onSetApiKey={handleSetApiKey} onPreviewCode={setPreviewSkill} />
+            <SkillGroup
+              title="已安装 Skills"
+              skills={grouped.installed}
+              onToggle={handleToggle}
+              onInstall={handleInstall}
+              onSetApiKey={handleSetApiKey}
+              onPreviewCode={setPreviewSkill}
+            />
           )}
           {grouped.other.length > 0 && (
-            <SkillGroup title="其他 Skills" skills={grouped.other} onToggle={handleToggle} onInstall={handleInstall} onSetApiKey={handleSetApiKey} onPreviewCode={setPreviewSkill} />
+            <SkillGroup
+              title="其他 Skills"
+              skills={grouped.other}
+              onToggle={handleToggle}
+              onInstall={handleInstall}
+              onSetApiKey={handleSetApiKey}
+              onPreviewCode={setPreviewSkill}
+            />
           )}
         </div>
       )}
@@ -1065,6 +1610,8 @@ export function SkillsTab() {
       <ClawHubDialog
         open={clawhubOpen}
         onClose={() => setClawhubOpen(false)}
+        onInstall={handleClawHubInstall}
+        cooldownUntilBySlug={clawhubCooldownUntilBySlug}
       />
 
       <SkillCodePreviewDialog

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
 import { ChevronLeft, FileText, Network, Pencil, Search, Settings2 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { KnowledgeDocumentsTab } from "@/components/knowledge/tabs/KnowledgeDocumentsTab";
 import { KnowledgeGraphTab } from "@/components/knowledge/tabs/KnowledgeGraphTab";
 import { KnowledgeRetrievalTab } from "@/components/knowledge/tabs/KnowledgeRetrievalTab";
@@ -57,7 +57,7 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
   return (
     <div className="flex h-full min-h-0 flex-col gap-md">
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle>编辑文档信息</DialogTitle>
           </DialogHeader>
@@ -137,7 +137,9 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
             </button>
             <div className="min-w-0 pt-0.5">
               <div className="truncate text-base font-semibold text-text-primary">
-                {isDocumentDetail ? currentDocument?.filename || "文档预览" : kbDetail?.name || "知识库"}
+                {isDocumentDetail
+                  ? currentDocument?.filename || "文档预览"
+                  : kbDetail?.name || "知识库"}
               </div>
               <div className="truncate text-xs text-text-tertiary">
                 {isDocumentDetail
@@ -165,7 +167,7 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
           ) : null}
         </div>
         {!isDocumentDetail && (
-          <div className="mt-md flex items-center gap-sm">
+          <div className="mt-md border-b border-border-light">
             {(
               [
                 { key: "documents", label: "文档", icon: FileText },
@@ -179,10 +181,10 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
                 <button
                   key={item.key}
                   className={cn(
-                    "inline-flex h-9 items-center gap-xs rounded-md border px-sm text-xs transition-colors",
+                    "inline-flex items-center gap-xs border-b-2 border-transparent px-4 py-2.5 text-sm transition-colors",
                     tab === item.key
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border-light bg-background text-text-tertiary hover:bg-background-secondary hover:text-text-primary",
+                      ? "border-primary text-primary"
+                      : "text-text-secondary hover:text-text-primary",
                   )}
                   onClick={() => setTab(item.key)}
                 >

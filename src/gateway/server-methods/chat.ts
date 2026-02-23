@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
@@ -769,6 +770,11 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const sessionConnectorIds = Array.isArray(cfg.connectors?.sessions?.[sessionKey]?.connectorIds)
+      ? (cfg.connectors?.sessions?.[sessionKey]?.connectorIds ?? []).filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0,
+        )
+      : [];
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -848,7 +854,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       // See: https://github.com/moltbot/moltbot/issues/3658
       const stampedMessage = injectTimestamp(parsedMessage, timestampOptsFromConfig(cfg));
 
-      const ctx: MsgContext = {
+      const ctx: MsgContext & { Connectors?: string[] } = {
         Body: parsedMessage,
         BodyForAgent: stampedMessage,
         BodyForCommands: commandBody,
@@ -865,7 +871,13 @@ export const chatHandlers: GatewayRequestHandlers = {
         SenderName: clientInfo?.displayName,
         SenderUsername: clientInfo?.displayName,
         GatewayClientScopes: client?.connect?.scopes,
+        Connectors: sessionConnectorIds.length > 0 ? sessionConnectorIds : undefined,
       };
+      if (sessionConnectorIds.length > 0) {
+        context.logGateway.info(
+          `chat.send connectors sessionKey=${sessionKey} count=${sessionConnectorIds.length} ids=${sessionConnectorIds.join(",")}`,
+        );
+      }
 
       const agentId = resolveSessionAgentId({
         sessionKey,

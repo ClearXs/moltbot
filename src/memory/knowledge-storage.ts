@@ -1,8 +1,8 @@
-import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import type { KnowledgeDocument } from "./knowledge-schema.js";
 
 export type StoreDocumentParams = {
@@ -391,7 +391,7 @@ export class KnowledgeStorageManager {
     }
 
     query += ` WHERE ${conditions.join(" AND ")}`;
-    query += ` ORDER BY d.uploaded_at DESC LIMIT ? OFFSET ?`;
+    query += ` ORDER BY d.uploaded_at DESC, d.id DESC LIMIT ? OFFSET ?`;
     values.push(limit, offset);
 
     const rows = this.db.prepare(query).all(...values) as KnowledgeDocument[];

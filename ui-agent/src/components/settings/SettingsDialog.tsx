@@ -1,23 +1,20 @@
 "use client";
 
-import { Settings, Zap, Bot, Palette, Cog } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Settings, Zap, Bot, Palette, Cog, Plug } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useSettingsStore, type SettingsTab } from "@/stores/settingsStore";
-import { GeneralSettingsTab } from "./tabs/GeneralSettingsTab";
-import { SkillsTab } from "./tabs/SkillsTab";
-import { ModelsTab } from "./tabs/ModelsTab";
-import { AppearanceTab } from "./tabs/AppearanceTab";
 import { AdvancedTab } from "./tabs/AdvancedTab";
+import { AppearanceTab } from "./tabs/AppearanceTab";
+import { ConnectorsTab } from "./tabs/ConnectorsTab";
+import { GeneralSettingsTab } from "./tabs/GeneralSettingsTab";
+import { ModelsTab } from "./tabs/ModelsTab";
+import { SkillsTab } from "./tabs/SkillsTab";
 
 const tabs: { value: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { value: "general", label: "通用", icon: <Settings className="w-4 h-4" /> },
   { value: "skills", label: "Skills", icon: <Zap className="w-4 h-4" /> },
+  { value: "connectors", label: "连接器", icon: <Plug className="w-4 h-4" /> },
   { value: "models", label: "模型", icon: <Bot className="w-4 h-4" /> },
   { value: "appearance", label: "外观", icon: <Palette className="w-4 h-4" /> },
   { value: "advanced", label: "高级", icon: <Cog className="w-4 h-4" /> },
@@ -28,7 +25,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && closeSettings()}>
-      <DialogContent className="max-w-3xl h-[80vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-[48rem] h-[80vh] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-0 flex-shrink-0">
           <DialogTitle className="text-lg font-semibold">设置</DialogTitle>
         </DialogHeader>
@@ -57,6 +54,9 @@ export function SettingsDialog() {
             </TabsContent>
             <TabsContent value="skills" className="mt-0 h-full">
               <SkillsTab />
+            </TabsContent>
+            <TabsContent value="connectors" className="mt-0 h-full">
+              <ConnectorsTab />
             </TabsContent>
             <TabsContent value="models" className="mt-0 h-full">
               <ModelsTab />

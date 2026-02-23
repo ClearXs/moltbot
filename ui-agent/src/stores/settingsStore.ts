@@ -1,7 +1,13 @@
 import { create } from "zustand";
 import { useConnectionStore } from "./connectionStore";
 
-export type SettingsTab = "general" | "skills" | "models" | "appearance" | "advanced";
+export type SettingsTab =
+  | "general"
+  | "skills"
+  | "connectors"
+  | "models"
+  | "appearance"
+  | "advanced";
 
 /** Partial config shape for the fields we expose in the UI */
 export interface OpenClawConfigPartial {
@@ -92,7 +98,9 @@ interface SettingsState {
 
   // Actions - Config
   loadConfig: () => Promise<void>;
-  patchConfig: (patch: Record<string, unknown>) => Promise<{ ok: boolean; error?: string; needsRestart?: boolean }>;
+  patchConfig: (
+    patch: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; error?: string; needsRestart?: boolean }>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({

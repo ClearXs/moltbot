@@ -11,7 +11,11 @@ import {
 import { loadConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { KnowledgeManager } from "../memory/knowledge-manager.js";
-import type { KnowledgeBaseEntry } from "../memory/knowledge-schema.js";
+import type {
+  KnowledgeBaseTagInput,
+  UpdateKnowledgeSettingsParams,
+} from "../memory/knowledge-manager.js";
+import type { KnowledgeBaseRuntimeSettings } from "../memory/knowledge-schema.js";
 import { requireNodeSqlite } from "../memory/sqlite.js";
 import { AuthRateLimiter } from "./auth-rate-limit.ts";
 import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
@@ -130,6 +134,196 @@ function parseNumberParam(value: string | null): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseBaseSettings(value: unknown): Partial<KnowledgeBaseRuntimeSettings> | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const settings: Partial<KnowledgeBaseRuntimeSettings> = {};
+  if (raw.vectorization && typeof raw.vectorization === "object") {
+    const vectorization = raw.vectorization as Record<string, unknown>;
+    settings.vectorization = {
+      enabled: typeof vectorization.enabled === "boolean" ? vectorization.enabled : undefined,
+    } as Partial<KnowledgeBaseRuntimeSettings["vectorization"]>;
+  }
+  if (raw.chunk && typeof raw.chunk === "object") {
+    const chunk = raw.chunk as Record<string, unknown>;
+    settings.chunk = {
+      enabled: typeof chunk.enabled === "boolean" ? chunk.enabled : undefined,
+      size: typeof chunk.size === "number" ? chunk.size : undefined,
+      overlap: typeof chunk.overlap === "number" ? chunk.overlap : undefined,
+      separator:
+        chunk.separator === "auto" ||
+        chunk.separator === "paragraph" ||
+        chunk.separator === "sentence"
+          ? chunk.separator
+          : undefined,
+    } as Partial<KnowledgeBaseRuntimeSettings["chunk"]>;
+  }
+  if (raw.retrieval && typeof raw.retrieval === "object") {
+    const retrieval = raw.retrieval as Record<string, unknown>;
+    settings.retrieval = {
+      mode:
+        retrieval.mode === "semantic" || retrieval.mode === "keyword" || retrieval.mode === "hybrid"
+          ? retrieval.mode
+          : undefined,
+      topK: typeof retrieval.topK === "number" ? retrieval.topK : undefined,
+      minScore: typeof retrieval.minScore === "number" ? retrieval.minScore : undefined,
+      hybridAlpha: typeof retrieval.hybridAlpha === "number" ? retrieval.hybridAlpha : undefined,
+    } as Partial<KnowledgeBaseRuntimeSettings["retrieval"]>;
+  }
+  if (raw.index && typeof raw.index === "object") {
+    const index = raw.index as Record<string, unknown>;
+    settings.index = {
+      mode: index.mode === "high_quality" || index.mode === "balanced" ? index.mode : undefined,
+    } as Partial<KnowledgeBaseRuntimeSettings["index"]>;
+  }
+  if (raw.graph && typeof raw.graph === "object") {
+    const graph = raw.graph as Record<string, unknown>;
+    settings.graph = {
+      enabled: typeof graph.enabled === "boolean" ? graph.enabled : undefined,
+    } as Partial<KnowledgeBaseRuntimeSettings["graph"]>;
+  }
+  return settings;
+}
+
+function parseBaseTags(value: unknown): KnowledgeBaseTagInput[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const tags = value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const row = item as Record<string, unknown>;
+      if (typeof row.name !== "string") {
+        return null;
+      }
+      return {
+        name: row.name,
+        color: typeof row.color === "string" ? row.color : undefined,
+      };
+    })
+    .filter(Boolean) as KnowledgeBaseTagInput[];
+  return tags.length ? tags : [];
+}
+
+function parseSettingsUpdate(value: unknown): UpdateKnowledgeSettingsParams {
+  if (!value || typeof value !== "object") {
+    throw new Error("settings payload must be an object");
+  }
+  const raw = value as Record<string, unknown>;
+  const next: {
+    vectorization?: {
+      enabled?: boolean;
+      provider?: "openai" | "gemini" | "local" | "auto";
+      model?: string;
+    };
+    graph?: {
+      enabled?: boolean;
+      extractor?: "llm";
+      provider?: string;
+      model?: string;
+      minTriples?: number;
+      maxTriples?: number;
+      triplesPerKTokens?: number;
+      maxDepth?: number;
+    };
+  } = {};
+
+  if (raw.vectorization !== undefined) {
+    if (!raw.vectorization || typeof raw.vectorization !== "object") {
+      throw new Error("vectorization must be an object");
+    }
+    const vector = raw.vectorization as Record<string, unknown>;
+    const parsedVector: NonNullable<typeof next.vectorization> = {};
+    if (vector.enabled !== undefined) {
+      if (typeof vector.enabled !== "boolean") {
+        throw new Error("vectorization.enabled must be a boolean");
+      }
+      parsedVector.enabled = vector.enabled;
+    }
+    if (vector.provider !== undefined) {
+      if (
+        vector.provider !== "openai" &&
+        vector.provider !== "gemini" &&
+        vector.provider !== "local" &&
+        vector.provider !== "auto"
+      ) {
+        throw new Error("vectorization.provider is invalid");
+      }
+      parsedVector.provider = vector.provider;
+    }
+    if (vector.model !== undefined) {
+      if (typeof vector.model !== "string") {
+        throw new Error("vectorization.model must be a string");
+      }
+      parsedVector.model = vector.model;
+    }
+    next.vectorization = parsedVector;
+  }
+
+  if (raw.graph !== undefined) {
+    if (!raw.graph || typeof raw.graph !== "object") {
+      throw new Error("graph must be an object");
+    }
+    const graph = raw.graph as Record<string, unknown>;
+    const parsedGraph: NonNullable<typeof next.graph> = {};
+    if (graph.enabled !== undefined) {
+      if (typeof graph.enabled !== "boolean") {
+        throw new Error("graph.enabled must be a boolean");
+      }
+      parsedGraph.enabled = graph.enabled;
+    }
+    if (graph.extractor !== undefined) {
+      if (graph.extractor !== "llm") {
+        throw new Error("graph.extractor is invalid, only 'llm' is supported");
+      }
+      parsedGraph.extractor = "llm";
+    }
+    if (graph.provider !== undefined) {
+      if (typeof graph.provider !== "string") {
+        throw new Error("graph.provider must be a string");
+      }
+      parsedGraph.provider = graph.provider;
+    }
+    if (graph.model !== undefined) {
+      if (typeof graph.model !== "string") {
+        throw new Error("graph.model must be a string");
+      }
+      parsedGraph.model = graph.model;
+    }
+    if (graph.minTriples !== undefined) {
+      if (typeof graph.minTriples !== "number") {
+        throw new Error("graph.minTriples must be a number");
+      }
+      parsedGraph.minTriples = graph.minTriples;
+    }
+    if (graph.maxTriples !== undefined) {
+      if (typeof graph.maxTriples !== "number") {
+        throw new Error("graph.maxTriples must be a number");
+      }
+      parsedGraph.maxTriples = graph.maxTriples;
+    }
+    if (graph.triplesPerKTokens !== undefined) {
+      if (typeof graph.triplesPerKTokens !== "number") {
+        throw new Error("graph.triplesPerKTokens must be a number");
+      }
+      parsedGraph.triplesPerKTokens = graph.triplesPerKTokens;
+    }
+    if (graph.maxDepth !== undefined) {
+      if (typeof graph.maxDepth !== "number") {
+        throw new Error("graph.maxDepth must be a number");
+      }
+      parsedGraph.maxDepth = graph.maxDepth;
+    }
+    next.graph = parsedGraph;
+  }
+
+  return next;
+}
+
 /**
  * Parse multipart form data for file upload
  */
@@ -199,13 +393,27 @@ function resolveKnowledgeAgentId(req: IncomingMessage) {
   return resolveAgentIdFromHeader(req) ?? resolveDefaultAgentId(cfg);
 }
 
-function toBasePayload(base: KnowledgeBaseEntry) {
+function toBasePayload(base: {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  visibility: "private" | "team" | "public";
+  created_at: number;
+  updated_at: number;
+  tags?: Array<{ tagId: string; name: string; color: string | null }>;
+  settings?: KnowledgeBaseRuntimeSettings;
+  documentCount?: number;
+}) {
   return {
     kbId: base.id,
     name: base.name,
     description: base.description ?? null,
     icon: base.icon ?? null,
     visibility: base.visibility,
+    tags: base.tags ?? [],
+    settings: base.settings,
+    documentCount: base.documentCount ?? 0,
     createdAt: new Date(base.created_at).toISOString(),
     updatedAt: new Date(base.updated_at).toISOString(),
   };
@@ -379,6 +587,8 @@ export async function handleKnowledgeHttpRequest(
           description: typeof body.description === "string" ? body.description : undefined,
           icon: typeof body.icon === "string" ? body.icon : undefined,
           visibility: body.visibility as "private" | "team" | "public" | undefined,
+          tags: parseBaseTags(body.tags),
+          settings: parseBaseSettings(body.settings),
         });
         sendJson(res, 200, toBasePayload(kb));
       } catch (err) {
@@ -414,7 +624,12 @@ export async function handleKnowledgeHttpRequest(
           total: list.total,
           returned: list.returned,
           offset: list.offset,
-          kbs: list.kbs.map(toBasePayload),
+          kbs: list.kbs.map((kb) =>
+            toBasePayload({
+              ...kb,
+              documentCount: manager.getDocumentCount({ agentId, kbId: kb.id }),
+            }),
+          ),
         });
       } catch (err) {
         sendInvalidRequest(res, `List bases failed: ${formatError(err)}`);
@@ -435,7 +650,13 @@ export async function handleKnowledgeHttpRequest(
           return true;
         }
         const stats = manager.getGraphStats({ agentId, kbId: kb.id });
-        sendJson(res, 200, { ...toBasePayload(kb), stats });
+        sendJson(res, 200, {
+          ...toBasePayload({
+            ...kb,
+            documentCount: manager.getDocumentCount({ agentId, kbId: kb.id }),
+          }),
+          stats,
+        });
       } catch (err) {
         sendInvalidRequest(res, `Get base failed: ${formatError(err)}`);
       }
@@ -458,8 +679,16 @@ export async function handleKnowledgeHttpRequest(
           description: typeof body.description === "string" ? body.description : undefined,
           icon: typeof body.icon === "string" ? body.icon : undefined,
           visibility: body.visibility as "private" | "team" | "public" | undefined,
+          tags: parseBaseTags(body.tags),
         });
-        sendJson(res, 200, toBasePayload(kb));
+        sendJson(
+          res,
+          200,
+          toBasePayload({
+            ...kb,
+            documentCount: manager.getDocumentCount({ agentId, kbId: kb.id }),
+          }),
+        );
       } catch (err) {
         sendInvalidRequest(res, `Update base failed: ${formatError(err)}`);
       }
@@ -484,6 +713,184 @@ export async function handleKnowledgeHttpRequest(
         sendJson(res, 200, result);
       } catch (err) {
         sendInvalidRequest(res, `Delete base failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/settings") {
+      if (req.method === "GET") {
+        const kbId = url.searchParams.get("kbId")?.trim() || "";
+        if (!kbId) {
+          sendInvalidRequest(res, "kbId is required");
+          return true;
+        }
+        try {
+          const settings = manager.getBaseSettings({ agentId, kbId });
+          sendJson(res, 200, { kbId, settings });
+        } catch (err) {
+          sendInvalidRequest(res, `Base settings load failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      if (req.method === "PUT") {
+        const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+          string,
+          unknown
+        > | null;
+        if (!body) {
+          return true;
+        }
+        const kbId = typeof body.kbId === "string" ? body.kbId.trim() : "";
+        if (!kbId) {
+          sendInvalidRequest(res, "kbId is required");
+          return true;
+        }
+        try {
+          const settings = manager.updateBaseSettings({
+            agentId,
+            kbId,
+            settings: parseBaseSettings(body.settings) ?? {},
+          });
+          sendJson(res, 200, { kbId, settings });
+        } catch (err) {
+          sendInvalidRequest(res, `Base settings update failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      sendMethodNotAllowed(res, "GET, PUT");
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/tags") {
+      if (req.method === "GET") {
+        try {
+          sendJson(res, 200, { tags: manager.listTags(agentId) });
+        } catch (err) {
+          sendInvalidRequest(res, `Tags list failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      if (req.method === "POST") {
+        const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+          string,
+          unknown
+        > | null;
+        if (!body) {
+          return true;
+        }
+        try {
+          const tag = manager.createTag({
+            agentId,
+            name: typeof body.name === "string" ? body.name : "",
+            color: typeof body.color === "string" ? body.color : undefined,
+          });
+          sendJson(res, 200, tag);
+        } catch (err) {
+          sendInvalidRequest(res, `Tag create failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      if (req.method === "PUT") {
+        const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+          string,
+          unknown
+        > | null;
+        if (!body) {
+          return true;
+        }
+        try {
+          const tag = manager.updateTag({
+            agentId,
+            tagId: typeof body.tagId === "string" ? body.tagId : "",
+            name: typeof body.name === "string" ? body.name : undefined,
+            color: typeof body.color === "string" ? body.color : undefined,
+          });
+          sendJson(res, 200, tag);
+        } catch (err) {
+          sendInvalidRequest(res, `Tag update failed: ${formatError(err)}`);
+        }
+        return true;
+      }
+      sendMethodNotAllowed(res, "GET, POST, PUT");
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/tags/delete") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const result = manager.deleteTag({
+          agentId,
+          tagId: typeof body.tagId === "string" ? body.tagId : "",
+        });
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendInvalidRequest(res, `Tag delete failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/tags/bind") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const tags = manager.bindTagsToBase({
+          agentId,
+          kbId: typeof body.kbId === "string" ? body.kbId : "",
+          tagIds:
+            Array.isArray(body.tagIds) && body.tagIds.every((item) => typeof item === "string")
+              ? body.tagIds
+              : [],
+        });
+        sendJson(res, 200, { tags });
+      } catch (err) {
+        sendInvalidRequest(res, `Bind tags failed: ${formatError(err)}`);
+      }
+      return true;
+    }
+
+    if (url.pathname === "/api/knowledge/base/tags/unbind") {
+      if (req.method !== "POST") {
+        sendMethodNotAllowed(res, "POST");
+        return true;
+      }
+      const body = (await readJsonBodyOrError(req, res, DEFAULT_BODY_BYTES)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body) {
+        return true;
+      }
+      try {
+        const tags = manager.unbindTagsFromBase({
+          agentId,
+          kbId: typeof body.kbId === "string" ? body.kbId : "",
+          tagIds:
+            Array.isArray(body.tagIds) && body.tagIds.every((item) => typeof item === "string")
+              ? body.tagIds
+              : [],
+        });
+        sendJson(res, 200, { tags });
+      } catch (err) {
+        sendInvalidRequest(res, `Unbind tags failed: ${formatError(err)}`);
       }
       return true;
     }
@@ -628,7 +1035,7 @@ export async function handleKnowledgeHttpRequest(
           return true;
         }
         try {
-          const settings = manager.updateSettings(agentId, body as Record<string, unknown>);
+          const settings = manager.updateSettings(agentId, parseSettingsUpdate(body));
           sendJson(res, 200, settings);
         } catch (err) {
           sendInvalidRequest(res, `Settings update failed: ${formatError(err)}`);

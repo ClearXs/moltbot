@@ -1,11 +1,15 @@
 "use client";
 
+import { Check, Plus, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { KnowledgeBaseList } from "@/components/knowledge/KnowledgeBaseList";
 import { KnowledgeDetail } from "@/components/knowledge/KnowledgeDetail";
+import { KnowledgeIconPicker } from "@/components/knowledge/KnowledgeIconPicker";
+import { KnowledgeTagSelector } from "@/components/knowledge/KnowledgeTagSelector";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
 
@@ -21,39 +25,60 @@ export function KnowledgeBasePage() {
     activeDocumentId,
     createKb,
     isCreatingKb,
+    availableTags,
+    loadAvailableTags,
+    createAvailableTag,
+    deleteAvailableTag,
+    isLoadingTags,
+    isUpdatingTags,
   } = useKnowledgeBaseStore();
   const [view, setView] = useState<"list" | "detail">("list");
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [icon, setIcon] = useState("book");
+  const [icon, setIcon] = useState("lucide:book");
   const [visibility, setVisibility] = useState<"private" | "team" | "public">("private");
+  const [selectedTagNames, setSelectedTagNames] = useState<string[]>([]);
+  const [vectorizationEnabled, setVectorizationEnabled] = useState(true);
+  const [graphEnabled, setGraphEnabled] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [selectedFilterTags, setSelectedFilterTags] = useState<string[]>([]);
+  const [filterTagsOpen, setFilterTagsOpen] = useState(false);
+  const [filterTagQuery, setFilterTagQuery] = useState("");
   const [filterVisibility, setFilterVisibility] = useState<"all" | "private" | "team" | "public">(
     "all",
   );
+  const [manageTagsOpen, setManageTagsOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#64748b");
 
   useEffect(() => {
     void loadKbList({ offset: 0 });
   }, [loadKbList]);
+
+  useEffect(() => {
+    void loadAvailableTags();
+  }, [loadAvailableTags]);
 
   const handleOpenDetail = (kbId: string) => {
     void selectKb(kbId);
     setView("detail");
   };
 
-  const iconOptions = useMemo(
-    () => [
-      { value: "book", label: "书籍" },
-      { value: "database", label: "数据库" },
-      { value: "folder", label: "文件夹" },
-      { value: "lightbulb", label: "灵感" },
-      { value: "shield", label: "合规" },
-    ],
-    [],
+  const selectedTags = useMemo(
+    () =>
+      selectedTagNames.map((name) => {
+        const matched = availableTags.find((tag) => tag.name === name);
+        return { name, color: matched?.color ?? undefined };
+      }),
+    [availableTags, selectedTagNames],
   );
-
+  const filteredSearchTags = useMemo(() => {
+    const q = filterTagQuery.trim().toLowerCase();
+    if (!q) return availableTags;
+    return availableTags.filter((tag) => tag.name.toLowerCase().includes(q));
+  }, [availableTags, filterTagQuery]);
   return (
     <div
       className={
@@ -83,6 +108,7 @@ export function KnowledgeBasePage() {
                       offset: 0,
                       search: search.trim() || undefined,
                       visibility: filterVisibility === "all" ? undefined : filterVisibility,
+                      tags: selectedFilterTags,
                     });
                   }
                 }}
@@ -95,6 +121,7 @@ export function KnowledgeBasePage() {
                     offset: 0,
                     search: search.trim() || undefined,
                     visibility: filterVisibility === "all" ? undefined : filterVisibility,
+                    tags: selectedFilterTags,
                   })
                 }
               >
@@ -105,11 +132,87 @@ export function KnowledgeBasePage() {
                 variant="ghost"
                 onClick={() => {
                   setSearch("");
+                  setSelectedFilterTags([]);
                   setFilterVisibility("all");
                   void loadKbList({ offset: 0 });
                 }}
               >
                 清空
+              </Button>
+            </div>
+            <div className="flex items-center gap-sm">
+              <Popover open={filterTagsOpen} onOpenChange={setFilterTagsOpen}>
+                <PopoverTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    标签筛选{selectedFilterTags.length > 0 ? ` (${selectedFilterTags.length})` : ""}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="z-[60] w-[20rem] max-w-[92vw] p-sm shadow-xl"
+                  align="start"
+                  side="bottom"
+                  sideOffset={8}
+                >
+                  <div className="space-y-sm">
+                    <Input
+                      value={filterTagQuery}
+                      onChange={(e) => setFilterTagQuery(e.target.value)}
+                      placeholder="搜索标签"
+                    />
+                    <div className="max-h-56 space-y-1 overflow-auto pr-1">
+                      {filteredSearchTags.map((tag) => {
+                        const selected = selectedFilterTags.includes(tag.name);
+                        return (
+                          <button
+                            key={tag.tagId}
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-md border border-border-light px-sm py-xs text-left hover:bg-primary/5"
+                            onClick={() =>
+                              setSelectedFilterTags((prev) =>
+                                prev.includes(tag.name)
+                                  ? prev.filter((name) => name !== tag.name)
+                                  : [...prev, tag.name],
+                              )
+                            }
+                          >
+                            <span className="inline-flex items-center gap-2 text-xs text-text-primary">
+                              <span
+                                className="inline-block h-2 w-2 rounded-full"
+                                style={{ backgroundColor: tag.color ?? "#64748b" }}
+                              />
+                              {tag.name}
+                            </span>
+                            {selected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        void loadKbList({
+                          offset: 0,
+                          search: search.trim() || undefined,
+                          visibility: filterVisibility === "all" ? undefined : filterVisibility,
+                          tags: selectedFilterTags,
+                        });
+                        setFilterTagsOpen(false);
+                      }}
+                    >
+                      应用筛选
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => setManageTagsOpen(true)}
+                title="标签管理"
+              >
+                <Settings2 className="h-4 w-4" />
               </Button>
             </div>
             <div className="flex items-center gap-sm">
@@ -123,6 +226,7 @@ export function KnowledgeBasePage() {
                     offset: 0,
                     search: search.trim() || undefined,
                     visibility: value === "all" ? undefined : value,
+                    tags: selectedFilterTags,
                   });
                 }}
               >
@@ -146,6 +250,7 @@ export function KnowledgeBasePage() {
                 limit: kbLimit,
                 search: search.trim() || undefined,
                 visibility: filterVisibility === "all" ? undefined : filterVisibility,
+                tags: selectedFilterTags,
               })
             }
             onLimitChange={(nextLimit) =>
@@ -154,6 +259,7 @@ export function KnowledgeBasePage() {
                 limit: nextLimit,
                 search: search.trim() || undefined,
                 visibility: filterVisibility === "all" ? undefined : filterVisibility,
+                tags: selectedFilterTags,
               })
             }
           />
@@ -170,18 +276,21 @@ export function KnowledgeBasePage() {
         </div>
       )}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[56rem]">
           <DialogHeader>
             <DialogTitle>新建知识库</DialogTitle>
           </DialogHeader>
           <div className="space-y-md text-sm">
             <div>
-              <div className="text-xs text-text-tertiary mb-xs">名称</div>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例如：员工手册"
-              />
+              <div className="text-xs text-text-tertiary mb-xs">名称与图标</div>
+              <div className="flex items-center gap-sm">
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如：员工手册"
+                />
+                <KnowledgeIconPicker value={icon} onChange={setIcon} />
+              </div>
             </div>
             <div>
               <div className="text-xs text-text-tertiary mb-xs">描述</div>
@@ -192,33 +301,49 @@ export function KnowledgeBasePage() {
                 rows={3}
               />
             </div>
-            <div className="grid grid-cols-2 gap-sm">
-              <div>
-                <div className="text-xs text-text-tertiary mb-xs">图标</div>
-                <select
-                  className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-xs"
-                  value={icon}
-                  onChange={(e) => setIcon(e.target.value)}
-                >
-                  {iconOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <div className="text-xs text-text-tertiary mb-xs">权限</div>
-                <select
-                  className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-xs"
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as typeof visibility)}
-                >
-                  <option value="private">仅自己</option>
-                  <option value="team">团队</option>
-                  <option value="public">公开</option>
-                </select>
-              </div>
+            <div>
+              <div className="text-xs text-text-tertiary mb-xs">权限</div>
+              <select
+                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-xs"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as typeof visibility)}
+              >
+                <option value="private">仅自己</option>
+                <option value="team">团队</option>
+                <option value="public">公开</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-xs text-text-tertiary mb-xs">标签</div>
+              <KnowledgeTagSelector
+                selectedTagNames={selectedTagNames}
+                availableTags={availableTags}
+                isLoadingTags={isLoadingTags}
+                isUpdatingTags={isUpdatingTags}
+                onChange={setSelectedTagNames}
+                onCreateTag={createAvailableTag}
+                onDeleteTag={deleteAvailableTag}
+                popoverSide="top"
+              />
+            </div>
+            <div className="rounded-md border border-border-light p-sm space-y-sm">
+              <div className="text-xs font-medium text-text-secondary">基础设置</div>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={vectorizationEnabled}
+                  onChange={(e) => setVectorizationEnabled(e.target.checked)}
+                />
+                启用向量化
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={graphEnabled}
+                  onChange={(e) => setGraphEnabled(e.target.checked)}
+                />
+                启用图谱化
+              </label>
             </div>
             {createError && <div className="text-xs text-error">{createError}</div>}
             <div className="flex justify-end gap-sm">
@@ -241,12 +366,30 @@ export function KnowledgeBasePage() {
                       description: description.trim() || undefined,
                       icon,
                       visibility,
+                      tags: selectedTags,
+                      settings: {
+                        vectorization: {
+                          enabled: vectorizationEnabled,
+                        },
+                        chunk: {
+                          enabled: vectorizationEnabled,
+                          size: 800,
+                          overlap: 120,
+                          separator: "auto",
+                        },
+                        graph: {
+                          enabled: graphEnabled,
+                        },
+                      },
                     });
                     setCreateOpen(false);
                     setName("");
                     setDescription("");
-                    setIcon("book");
+                    setIcon("lucide:book");
+                    setSelectedTagNames([]);
                     setVisibility("private");
+                    setVectorizationEnabled(true);
+                    setGraphEnabled(false);
                   } catch (error) {
                     setCreateError(error instanceof Error ? error.message : "创建失败");
                   }
@@ -254,6 +397,67 @@ export function KnowledgeBasePage() {
               >
                 {isCreatingKb ? "创建中..." : "创建"}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={manageTagsOpen} onOpenChange={setManageTagsOpen}>
+        <DialogContent className="w-[42rem] max-w-[92vw] p-6">
+          <DialogHeader>
+            <DialogTitle>标签管理</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-md">
+            <div className="flex items-center gap-sm">
+              <Input
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="新标签名称"
+              />
+              <input
+                className="h-9 w-14 rounded border border-border-light bg-white px-1"
+                type="color"
+                value={newTagColor}
+                onChange={(e) => setNewTagColor(e.target.value)}
+              />
+              <Button
+                size="sm"
+                disabled={isUpdatingTags || !newTagName.trim()}
+                onClick={async () => {
+                  await createAvailableTag({ name: newTagName.trim(), color: newTagColor });
+                  setNewTagName("");
+                }}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                添加
+              </Button>
+            </div>
+            <div className="max-h-64 space-y-1 overflow-auto pr-1">
+              {availableTags.map((tag) => (
+                <div
+                  key={tag.tagId}
+                  className="flex items-center justify-between rounded-md border border-border-light px-sm py-xs"
+                >
+                  <span className="inline-flex items-center gap-2 text-sm text-text-primary">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: tag.color ?? "#64748b" }}
+                    />
+                    {tag.name}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-error hover:text-error"
+                    disabled={isUpdatingTags}
+                    onClick={async () => {
+                      await deleteAvailableTag(tag.tagId);
+                      setSelectedFilterTags((prev) => prev.filter((name) => name !== tag.name));
+                    }}
+                  >
+                    删除
+                  </Button>
+                </div>
+              ))}
             </div>
           </div>
         </DialogContent>

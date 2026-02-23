@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   transpilePackages: ["lucide-react"],
   async rewrites() {
     // Use environment variable for backend URL, default to localhost:8000

@@ -1,10 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import { Type } from "@sinclair/typebox";
-import type { AnyAgentTool } from "./common.js";
 import { loadConfig } from "../../config/config.js";
 import { KnowledgeManager } from "../../memory/knowledge-manager.js";
 import { requireNodeSqlite } from "../../memory/sqlite.js";
+import type { MemorySearchResult } from "../../memory/types.js";
 import { resolveAgentDir, resolveAgentWorkspaceDir } from "../agent-scope.js";
+import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, readStringArrayParam, readNumberParam } from "./common.js";
 
 const dbByAgent = new Map<string, DatabaseSync>();
@@ -122,6 +123,13 @@ export function createKnowledgeSearchTool(opts: { agentId: string }): AnyAgentTo
       const query = readStringParam(params, "query", { required: true });
       const kbId = readStringParam(params, "kbId");
       const limit = readNumberParam(params, "limit", { integer: true }) ?? 5;
+      const resolvedKbId = kbId ?? manager.getBase(opts.agentId)?.id;
+      const baseSettings = resolvedKbId
+        ? manager.getBaseSettings({ agentId: opts.agentId, kbId: resolvedKbId })
+        : {
+            retrieval: { mode: "hybrid", topK: 5, minScore: 0.35, hybridAlpha: 0.5 },
+          };
+      const maxResults = Math.max(1, Math.min(limit, baseSettings.retrieval.topK));
 
       // Note: This requires MemoryIndexManager to be available
       // The search will be performed through the memory index
@@ -135,9 +143,20 @@ export function createKnowledgeSearchTool(opts: { agentId: string }): AnyAgentTo
         throw new Error("Memory search is not configured for this agent");
       }
 
-      const results = await memoryManager.search(query, { maxResults: limit });
+      const rawResults = await memoryManager.search(query, {
+        maxResults: Math.max(maxResults, baseSettings.retrieval.topK),
+        minScore: 0,
+      });
+      const rankedResults = rankKnowledgeResults({
+        results: rawResults,
+        query,
+        retrievalMode: baseSettings.retrieval.mode,
+        minScore: baseSettings.retrieval.minScore,
+        hybridAlpha: baseSettings.retrieval.hybridAlpha,
+        maxResults,
+      });
 
-      const formattedResults = results
+      const formattedResults = rankedResults
         .filter((result) => result.source === "knowledge")
         .map((result) => {
           const documentId = result.path.replace(/^knowledge\//, "");
@@ -167,6 +186,56 @@ export function createKnowledgeSearchTool(opts: { agentId: string }): AnyAgentTo
       });
     },
   };
+}
+
+type RankedKnowledgeResult = MemorySearchResult & {
+  score: number;
+};
+
+export function rankKnowledgeResults(params: {
+  results: MemorySearchResult[];
+  query: string;
+  retrievalMode: "semantic" | "keyword" | "hybrid";
+  minScore: number;
+  hybridAlpha: number;
+  maxResults: number;
+}): RankedKnowledgeResult[] {
+  const queryTerms = tokenizeQuery(params.query);
+  const scored = params.results.map((result) => {
+    const keywordScore = computeKeywordScore(result, queryTerms);
+    if (params.retrievalMode === "keyword") {
+      return { ...result, score: keywordScore };
+    }
+    if (params.retrievalMode === "hybrid") {
+      return {
+        ...result,
+        score: params.hybridAlpha * result.score + (1 - params.hybridAlpha) * keywordScore,
+      };
+    }
+    return { ...result, score: result.score };
+  });
+
+  return scored
+    .filter((result) => result.score >= params.minScore)
+    .toSorted((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, params.maxResults));
+}
+
+function tokenizeQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[\s,，。！？!?;；:：]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function computeKeywordScore(result: MemorySearchResult, queryTerms: string[]): number {
+  if (queryTerms.length === 0) {
+    return 0;
+  }
+  const text = `${result.snippet} ${result.path}`.toLowerCase();
+  const hits = queryTerms.reduce((count, term) => (text.includes(term) ? count + 1 : count), 0);
+  return hits / queryTerms.length;
 }
 
 /**

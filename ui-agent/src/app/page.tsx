@@ -7,6 +7,7 @@ import { MessageList, Message } from "@/components/chat/MessageList";
 import { FileItemProps } from "@/components/files/FileList";
 import { KnowledgeBasePage } from "@/components/knowledge/KnowledgeBasePage";
 import MainLayout from "@/components/layout/MainLayout";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,12 +18,17 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { WelcomePage } from "@/components/welcome/WelcomePage";
 import { StreamingReplayProvider, useStreamingReplay } from "@/contexts/StreamingReplayContext";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useToastStore } from "@/stores/toastStore";
+
+type ConnectorItem = {
+  id: string;
+  name: string;
+  status?: "connected" | "disconnected" | "error" | "draft";
+};
 
 // 内部组件，使用StreamingReplayContext
 function HomeContent() {
@@ -92,6 +98,9 @@ function HomeContent() {
   const [draftAttachments, setDraftAttachments] = useState<File[]>([]);
   const [highlightDraft, setHighlightDraft] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [availableConnectors, setAvailableConnectors] = useState<ConnectorItem[]>([]);
+  const [sessionConnectorIds, setSessionConnectorIds] = useState<Record<string, string[]>>({});
+  const [draftConnectorIds, setDraftConnectorIds] = useState<string[]>([]);
 
   // Dialog states
   type DialogType = "rename" | "delete" | "batchDelete" | null;
@@ -124,6 +133,75 @@ function HomeContent() {
       setCurrentConversationId(activeSessionKey);
     }
   }, [activeSessionKey]);
+
+  const loadConnectors = useCallback(async () => {
+    if (!wsClient) return;
+    try {
+      const result = await wsClient.sendRequest<{ items?: ConnectorItem[] }>("connectors.list", {});
+      setAvailableConnectors(result?.items ?? []);
+    } catch (error) {
+      addToast({
+        title: "连接器加载失败",
+        description: error instanceof Error ? error.message : "connectors.list failed",
+        variant: "error",
+      });
+    }
+  }, [addToast, wsClient]);
+
+  const loadSessionConnectors = useCallback(
+    async (sessionKey: string) => {
+      if (!wsClient || !sessionKey) return;
+      try {
+        const result = await wsClient.sendRequest<{ connectorIds?: string[] }>(
+          "connectors.session.get",
+          { sessionKey },
+        );
+        const ids = Array.isArray(result?.connectorIds)
+          ? result.connectorIds.filter(
+              (id): id is string => typeof id === "string" && id.trim().length > 0,
+            )
+          : [];
+        setSessionConnectorIds((prev) => ({ ...prev, [sessionKey]: ids }));
+      } catch (error) {
+        addToast({
+          title: "会话连接器加载失败",
+          description: error instanceof Error ? error.message : "connectors.session.get failed",
+          variant: "error",
+        });
+      }
+    },
+    [addToast, wsClient],
+  );
+
+  const saveSessionConnectors = useCallback(
+    async (sessionKey: string, connectorIds: string[]) => {
+      if (!wsClient || !sessionKey) return false;
+      try {
+        await wsClient.sendRequest("connectors.session.set", { sessionKey, connectorIds });
+        setSessionConnectorIds((prev) => ({ ...prev, [sessionKey]: connectorIds }));
+        return true;
+      } catch (error) {
+        addToast({
+          title: "会话连接器保存失败",
+          description: error instanceof Error ? error.message : "connectors.session.set failed",
+          variant: "error",
+        });
+        return false;
+      }
+    },
+    [addToast, wsClient],
+  );
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    void loadConnectors();
+  }, [status, loadConnectors]);
+
+  useEffect(() => {
+    if (!currentConversationId) return;
+    if (sessionConnectorIds[currentConversationId]) return;
+    void loadSessionConnectors(currentConversationId);
+  }, [currentConversationId, loadSessionConnectors, sessionConnectorIds]);
 
   useEffect(() => {
     setDraftMessage("");
@@ -487,6 +565,7 @@ function HomeContent() {
           } else {
             messages.push(errorMessage);
           }
+          delete usageAppliedByRunKeyRef.current[runKey];
           return { ...prev, [sessionKey]: messages };
         }
         if (!text && data.state === "final") {
@@ -518,7 +597,7 @@ function HomeContent() {
         } else {
           messages.push(nextMessage);
         }
-        if (data.state === "final" || data.state === "error") {
+        if (data.state === "final") {
           delete usageAppliedByRunKeyRef.current[runKey];
         }
         return { ...prev, [sessionKey]: messages };
@@ -832,6 +911,9 @@ function HomeContent() {
     }
 
     let sessionKey = currentConversationId;
+    const selectedConnectors = sessionKey
+      ? (sessionConnectorIds[sessionKey] ?? [])
+      : draftConnectorIds;
     if (!sessionKey) {
       setIsCreatingSession(true);
       const label = deriveSessionLabel(message);
@@ -845,11 +927,19 @@ function HomeContent() {
         });
         return { ok: false, error: "新建会话失败" };
       }
-      setCurrentConversationId(sessionKey);
+      const createdSessionKey = sessionKey;
+      if (!createdSessionKey) {
+        return { ok: false, error: "新建会话失败" };
+      }
+      setCurrentConversationId(createdSessionKey);
       setConversationMessages((prev) => ({
         ...prev,
-        [sessionKey]: prev[sessionKey] ?? [],
+        [createdSessionKey]: prev[createdSessionKey] ?? [],
       }));
+      if (selectedConnectors.length > 0) {
+        await saveSessionConnectors(createdSessionKey, selectedConnectors);
+        setDraftConnectorIds([]);
+      }
     }
 
     // 创建新的用户消息
@@ -909,6 +999,30 @@ function HomeContent() {
     }
   };
 
+  const activeConnectorIds = currentConversationId
+    ? (sessionConnectorIds[currentConversationId] ?? [])
+    : draftConnectorIds;
+
+  const handleToggleConnector = useCallback(
+    (connectorId: string, enabled: boolean) => {
+      const apply = (prev: string[]) => {
+        if (enabled) {
+          if (prev.includes(connectorId)) return prev;
+          return [...prev, connectorId];
+        }
+        return prev.filter((id) => id !== connectorId);
+      };
+      if (currentConversationId) {
+        const prev = sessionConnectorIds[currentConversationId] ?? [];
+        const next = apply(prev);
+        void saveSessionConnectors(currentConversationId, next);
+      } else {
+        setDraftConnectorIds((prev) => apply(prev));
+      }
+    },
+    [currentConversationId, saveSessionConnectors, sessionConnectorIds],
+  );
+
   // TopBar actions
 
   const handleShare = () => {
@@ -936,9 +1050,7 @@ function HomeContent() {
   const handleRename = () => {
     if (!currentConversationId) return;
     const session = getSessionByKey(currentConversationId);
-    setRenameInput(
-      session?.label || session?.derivedTitle || session?.displayName || ""
-    );
+    setRenameInput(session?.label || session?.derivedTitle || session?.displayName || "");
     setDialogSessionKey(currentConversationId);
     setActiveDialog("rename");
   };
@@ -1096,323 +1208,327 @@ function HomeContent() {
 
   return (
     <>
-    <MainLayout
-      userName="张三"
-      sessions={getFilteredSessions()}
-      isLoading={isSessionsLoading}
-      unreadMap={getUnreadMap()}
-      currentSessionKey={currentConversationId}
-      conversationTitle={activeMainView === "knowledge" ? undefined : conversationTitle}
-      onSelectSession={handleSelectConversation}
-      onNewSession={handleNewConversation}
-      onSearchChange={setSearchQuery}
-      onFilterChange={(kind) => setFilterKind(kind ?? "all")}
-      unreadOnly={unreadOnly}
-      onUnreadToggle={setUnreadOnly}
-      sortMode={sortMode}
-      onSortChange={(mode) => setSortMode(mode ?? "recent")}
-      searchQuery={searchQuery}
-      filterKind={filterKind}
-      selectionMode={selectionMode}
-      selectedKeys={selectedKeys}
-      onToggleSelectionMode={toggleSelectionMode}
-      onToggleSelectedKey={toggleSelectedKey}
-      onSelectAllKeys={(keys) => selectAllKeys(keys)}
-      onClearSelection={clearSelection}
-      onBatchDelete={() => {
-        if (selectedKeys.length === 0) return;
-        setActiveDialog("batchDelete");
-      }}
-      onRenameSession={(key) => {
-        if (currentConversationId !== key) {
-          setCurrentConversationId(key);
-        }
-        const session = getSessionByKey(key);
-        setRenameInput(
-          session?.label || session?.derivedTitle || session?.displayName || ""
-        );
-        setDialogSessionKey(key);
-        setActiveDialog("rename");
-      }}
-      onOpenKnowledge={() => setActiveMainView("knowledge")}
-      showTopBar
-      activeMainView={activeMainView}
-      onDeleteSession={(key) => {
-        setDialogSessionKey(key);
-        setActiveDialog("delete");
-      }}
-      onViewSession={handleViewSession}
-      onShare={handleShare}
-      onExport={handleExport}
-      onDelete={handleDelete}
-      onRename={handleRename}
-    >
-      <div className="h-full flex flex-col">
-        {/* 主内容区域 */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {activeMainView === "knowledge" ? (
-            <div className="flex-1 overflow-hidden bg-background-tertiary">
-              <KnowledgeBasePage />
-            </div>
-          ) : !showWelcomePage ? (
-            // 对话内容区域
-            <div className="flex-1 flex overflow-hidden">
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {/* 消息列表 */}
-                <MessageList
-                  messages={currentMessages}
-                  isLoading={historyLoadingKey === currentConversationId}
-                  emptyState={{
-                    title: currentHistoryError ? "历史记录加载失败" : "暂无消息",
-                    description: currentHistoryError
-                      ? "请检查网关连接后重试"
-                      : "发送第一条消息开始对话",
-                    actionLabel: currentHistoryError ? "重试" : undefined,
-                    onAction:
-                      currentHistoryError && currentConversationId
-                        ? () => {
-                            void fetchHistory(currentConversationId, true);
-                          }
-                        : undefined,
-                  }}
-                  loadMore={{
-                    hasMore: canLoadMore,
-                    isLoading: historyLoadingKey === currentConversationId,
-                    onLoadMore: () => {
-                      if (!currentConversationId) return;
-                      const nextLimit = Math.min(
-                        historyMaxLimit,
-                        currentHistoryLimit + historyDefaultLimit,
-                      );
-                      void fetchHistory(currentConversationId, true, nextLimit);
-                    },
-                  }}
-                  onRetryMessage={handleRetryMessage}
-                  onEditMessage={handleEditMessage}
-                  onCopyMessage={handleCopyToDraft}
-                  onDeleteMessage={handleDeleteFailedMessage}
-                  highlightMessageId={highlightMessageId}
-                />
-
-                {/* 输入框 - 底部 */}
-                <div className="flex-shrink-0">
-                  {/* 触发按钮横条 - 在有文件时显示 */}
-                  <ComputerPanelWrapper
-                    files={generatedFiles}
-                    isOpen={workspaceOpen}
-                    onToggle={() => setWorkspaceOpen((prev) => !prev)}
-                    compact={true}
+      <MainLayout
+        userName="张三"
+        sessions={getFilteredSessions()}
+        isLoading={isSessionsLoading}
+        unreadMap={getUnreadMap()}
+        currentSessionKey={currentConversationId}
+        conversationTitle={activeMainView === "knowledge" ? undefined : conversationTitle}
+        onSelectSession={handleSelectConversation}
+        onNewSession={handleNewConversation}
+        onSearchChange={setSearchQuery}
+        onFilterChange={(kind) => setFilterKind(kind ?? "all")}
+        unreadOnly={unreadOnly}
+        onUnreadToggle={setUnreadOnly}
+        sortMode={sortMode}
+        onSortChange={(mode) => setSortMode(mode ?? "recent")}
+        searchQuery={searchQuery}
+        filterKind={filterKind}
+        selectionMode={selectionMode}
+        selectedKeys={selectedKeys}
+        onToggleSelectionMode={toggleSelectionMode}
+        onToggleSelectedKey={toggleSelectedKey}
+        onSelectAllKeys={(keys) => selectAllKeys(keys)}
+        onClearSelection={clearSelection}
+        onBatchDelete={() => {
+          if (selectedKeys.length === 0) return;
+          setActiveDialog("batchDelete");
+        }}
+        onRenameSession={(key) => {
+          if (currentConversationId !== key) {
+            setCurrentConversationId(key);
+          }
+          const session = getSessionByKey(key);
+          setRenameInput(session?.label || session?.derivedTitle || session?.displayName || "");
+          setDialogSessionKey(key);
+          setActiveDialog("rename");
+        }}
+        onOpenKnowledge={() => setActiveMainView("knowledge")}
+        showTopBar
+        activeMainView={activeMainView}
+        onDeleteSession={(key) => {
+          setDialogSessionKey(key);
+          setActiveDialog("delete");
+        }}
+        onViewSession={handleViewSession}
+        onShare={handleShare}
+        onExport={handleExport}
+        onDelete={handleDelete}
+        onRename={handleRename}
+      >
+        <div className="h-full flex flex-col">
+          {/* 主内容区域 */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {activeMainView === "knowledge" ? (
+              <div className="flex-1 overflow-hidden bg-background-tertiary">
+                <KnowledgeBasePage />
+              </div>
+            ) : !showWelcomePage ? (
+              // 对话内容区域
+              <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {/* 消息列表 */}
+                  <MessageList
+                    messages={currentMessages}
+                    isLoading={historyLoadingKey === currentConversationId}
+                    emptyState={{
+                      title: currentHistoryError ? "历史记录加载失败" : "暂无消息",
+                      description: currentHistoryError
+                        ? "请检查网关连接后重试"
+                        : "发送第一条消息开始对话",
+                      actionLabel: currentHistoryError ? "重试" : undefined,
+                      onAction:
+                        currentHistoryError && currentConversationId
+                          ? () => {
+                              void fetchHistory(currentConversationId, true);
+                            }
+                          : undefined,
+                    }}
+                    loadMore={{
+                      hasMore: canLoadMore,
+                      isLoading: historyLoadingKey === currentConversationId,
+                      onLoadMore: () => {
+                        if (!currentConversationId) return;
+                        const nextLimit = Math.min(
+                          historyMaxLimit,
+                          currentHistoryLimit + historyDefaultLimit,
+                        );
+                        void fetchHistory(currentConversationId, true, nextLimit);
+                      },
+                    }}
+                    onRetryMessage={handleRetryMessage}
+                    onEditMessage={handleEditMessage}
+                    onCopyMessage={handleCopyToDraft}
+                    onDeleteMessage={handleDeleteFailedMessage}
+                    highlightMessageId={highlightMessageId}
                   />
 
-                  <EnhancedChatInput
-                    onSend={handleSendMessage}
-                    placeholder="输入消息... (支持 @ 提及和 / 命令)"
-                    compact={true}
-                    draftValue={draftMessage}
-                    onDraftChange={setDraftMessage}
-                    draftAttachments={draftAttachments}
-                    onDraftAttachmentsChange={setDraftAttachments}
-                    highlight={highlightDraft}
-                    onWorkspaceClick={() => setWorkspaceOpen((prev) => !prev)}
-                    hasGeneratedFiles={generatedFiles.length > 0}
-                    workspaceOpen={workspaceOpen}
-                  />
-                </div>
-              </div>
-            </div>
-          ) : (
-            // 欢迎页面 - 垂直居中包含输入框
-            <div className="flex-1 flex flex-col items-center justify-center px-2xl">
-              <div className="w-full max-w-[900px]">
-                <div className="text-center">
-                  <h1 className="text-4xl font-bold text-text-primary mb-md">企业运营助手</h1>
-                  <p className="text-sm text-text-tertiary mb-2xl">
-                    选择一个模板快速开始，或直接输入您的需求
-                  </p>
-                </div>
-                {/* 输入框 - 居中显示 */}
-                <div className="mt-3xl">
-                  {/* 触发按钮横条 - 在有文件时显示 */}
-                  <ComputerPanelWrapper
-                    files={generatedFiles}
-                    isOpen={workspaceOpen}
-                    onToggle={() => setWorkspaceOpen((prev) => !prev)}
-                    compact={false}
-                  />
+                  {/* 输入框 - 底部 */}
+                  <div className="flex-shrink-0">
+                    {/* 触发按钮横条 - 在有文件时显示 */}
+                    <ComputerPanelWrapper
+                      files={generatedFiles}
+                      isOpen={workspaceOpen}
+                      onToggle={() => setWorkspaceOpen((prev) => !prev)}
+                      compact={true}
+                    />
 
-                  <EnhancedChatInput
-                    onSend={handleSendMessage}
-                    placeholder="输入您的需求..."
-                    compact={false}
-                    draftValue={draftMessage}
-                    onDraftChange={setDraftMessage}
-                    draftAttachments={draftAttachments}
-                    onDraftAttachmentsChange={setDraftAttachments}
-                    highlight={highlightDraft}
-                    onWorkspaceClick={() => setWorkspaceOpen((prev) => !prev)}
-                    hasGeneratedFiles={generatedFiles.length > 0}
-                    workspaceOpen={workspaceOpen}
-                  />
-                </div>
-                <div className="mt-2xl">
-                  <WelcomePage
-                    onSelectPrompt={handleSelectAssistant}
-                    compact={true}
-                    variant="cards"
-                  />
+                    <EnhancedChatInput
+                      onSend={handleSendMessage}
+                      placeholder="输入消息... (支持 @ 提及和 / 命令)"
+                      compact={true}
+                      draftValue={draftMessage}
+                      onDraftChange={setDraftMessage}
+                      draftAttachments={draftAttachments}
+                      onDraftAttachmentsChange={setDraftAttachments}
+                      highlight={highlightDraft}
+                      onWorkspaceClick={() => setWorkspaceOpen((prev) => !prev)}
+                      hasGeneratedFiles={generatedFiles.length > 0}
+                      workspaceOpen={workspaceOpen}
+                      connectors={availableConnectors}
+                      activeConnectorIds={activeConnectorIds}
+                      onToggleConnector={handleToggleConnector}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {/* 会话详情对话框 */}
-      <Dialog open={Boolean(detailSessionKey)} onOpenChange={() => setDetailSessionKey(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">会话详情</DialogTitle>
-          </DialogHeader>
-          {detailSession ? (
-            <div className="space-y-sm text-sm text-text-secondary">
-              <div className="flex items-center justify-between">
-                <span>标题</span>
-                <span className="text-text-primary">
-                  {detailSession.label ||
-                    detailSession.derivedTitle ||
-                    detailSession.displayName ||
-                    "未命名"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Session Key</span>
-                <span className="text-text-primary truncate max-w-[200px]">
-                  {detailSession.key}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>最近活动</span>
-                <span className="text-text-primary">
-                  {detailSession.updatedAt
-                    ? new Date(detailSession.updatedAt).toLocaleString("zh-CN", {
-                        hour12: false,
-                      })
-                    : "—"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Token 使用量</span>
-                <span className="text-text-primary">{resolveTokens(detailSession)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Channel</span>
-                <span className="text-text-primary">{detailSession.channel || "—"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Model</span>
-                <span className="text-text-primary">
-                  {detailSession.model || detailSession.modelProvider || "—"}
-                </span>
-              </div>
-              {detailSession.lastMessagePreview && (
-                <div className="rounded-md border border-border-light bg-background-secondary p-2 text-xs">
-                  {detailSession.lastMessagePreview}
+            ) : (
+              // 欢迎页面 - 垂直居中包含输入框
+              <div className="flex-1 flex flex-col items-center justify-center px-2xl">
+                <div className="w-full max-w-[900px]">
+                  <div className="text-center">
+                    <h1 className="text-4xl font-bold text-text-primary mb-md">企业运营助手</h1>
+                    <p className="text-sm text-text-tertiary mb-2xl">
+                      选择一个模板快速开始，或直接输入您的需求
+                    </p>
+                  </div>
+                  {/* 输入框 - 居中显示 */}
+                  <div className="mt-3xl">
+                    {/* 触发按钮横条 - 在有文件时显示 */}
+                    <ComputerPanelWrapper
+                      files={generatedFiles}
+                      isOpen={workspaceOpen}
+                      onToggle={() => setWorkspaceOpen((prev) => !prev)}
+                      compact={false}
+                    />
+
+                    <EnhancedChatInput
+                      onSend={handleSendMessage}
+                      placeholder="输入您的需求..."
+                      compact={false}
+                      draftValue={draftMessage}
+                      onDraftChange={setDraftMessage}
+                      draftAttachments={draftAttachments}
+                      onDraftAttachmentsChange={setDraftAttachments}
+                      highlight={highlightDraft}
+                      onWorkspaceClick={() => setWorkspaceOpen((prev) => !prev)}
+                      hasGeneratedFiles={generatedFiles.length > 0}
+                      workspaceOpen={workspaceOpen}
+                      connectors={availableConnectors}
+                      activeConnectorIds={activeConnectorIds}
+                      onToggleConnector={handleToggleConnector}
+                    />
+                  </div>
+                  <div className="mt-2xl">
+                    <WelcomePage
+                      onSelectPrompt={handleSelectAssistant}
+                      compact={true}
+                      variant="cards"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-text-tertiary">未找到会话数据。</div>
-          )}
-          <DialogFooter className="gap-sm">
-            {detailSession && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(detailSession.key);
-                }}
-              >
-                复制 Session Key
-              </Button>
+              </div>
             )}
-            <Button size="sm" onClick={() => setDetailSessionKey(null)}>
-              关闭
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 重命名对话框 */}
-      <Dialog open={activeDialog === "rename"} onOpenChange={closeDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>重命名对话</DialogTitle>
-            <DialogDescription>请输入新的对话标题</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Input
-              value={renameInput}
-              onChange={(e) => setRenameInput(e.target.value)}
-              placeholder="输入新的对话标题"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && renameInput.trim()) {
-                  confirmRename();
-                }
-              }}
-              autoFocus
-            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>
-              取消
-            </Button>
-            <Button onClick={confirmRename} disabled={!renameInput.trim()}>
-              确认
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+        {/* 会话详情对话框 */}
+        <Dialog open={Boolean(detailSessionKey)} onOpenChange={() => setDetailSessionKey(null)}>
+          <DialogContent className="max-w-[28rem]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold">会话详情</DialogTitle>
+            </DialogHeader>
+            {detailSession ? (
+              <div className="space-y-sm text-sm text-text-secondary">
+                <div className="flex items-center justify-between">
+                  <span>标题</span>
+                  <span className="text-text-primary">
+                    {detailSession.label ||
+                      detailSession.derivedTitle ||
+                      detailSession.displayName ||
+                      "未命名"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Session Key</span>
+                  <span className="text-text-primary truncate max-w-[200px]">
+                    {detailSession.key}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>最近活动</span>
+                  <span className="text-text-primary">
+                    {detailSession.updatedAt
+                      ? new Date(detailSession.updatedAt).toLocaleString("zh-CN", {
+                          hour12: false,
+                        })
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Token 使用量</span>
+                  <span className="text-text-primary">{resolveTokens(detailSession)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Channel</span>
+                  <span className="text-text-primary">{detailSession.channel || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Model</span>
+                  <span className="text-text-primary">
+                    {detailSession.model || detailSession.modelProvider || "—"}
+                  </span>
+                </div>
+                {detailSession.lastMessagePreview && (
+                  <div className="rounded-md border border-border-light bg-background-secondary p-2 text-xs">
+                    {detailSession.lastMessagePreview}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-text-tertiary">未找到会话数据。</div>
+            )}
+            <DialogFooter className="gap-sm">
+              {detailSession && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(detailSession.key);
+                  }}
+                >
+                  复制 Session Key
+                </Button>
+              )}
+              <Button size="sm" onClick={() => setDetailSessionKey(null)}>
+                关闭
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* 删除确认对话框 */}
-      <Dialog open={activeDialog === "delete"} onOpenChange={closeDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>删除对话</DialogTitle>
-            <DialogDescription>确定要删除此对话吗?删除后将无法恢复。</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>
-              取消
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {/* 重命名对话框 */}
+        <Dialog open={activeDialog === "rename"} onOpenChange={closeDialog}>
+          <DialogContent className="max-w-[28rem]">
+            <DialogHeader>
+              <DialogTitle>重命名对话</DialogTitle>
+              <DialogDescription>请输入新的对话标题</DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Input
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                placeholder="输入新的对话标题"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && renameInput.trim()) {
+                    confirmRename();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeDialog}>
+                取消
+              </Button>
+              <Button onClick={confirmRename} disabled={!renameInput.trim()}>
+                确认
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* 批量删除确认对话框 */}
-      <Dialog open={activeDialog === "batchDelete"} onOpenChange={closeDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>批量删除</DialogTitle>
-            <DialogDescription>
-              确定要删除 {selectedKeys.length} 个会话吗?删除后将无法恢复。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>
-              取消
-            </Button>
-            <Button variant="destructive" onClick={confirmBatchDelete}>
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </MainLayout>
+        {/* 删除确认对话框 */}
+        <Dialog open={activeDialog === "delete"} onOpenChange={closeDialog}>
+          <DialogContent className="max-w-[28rem]">
+            <DialogHeader>
+              <DialogTitle>删除对话</DialogTitle>
+              <DialogDescription>确定要删除此对话吗?删除后将无法恢复。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeDialog}>
+                取消
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-    {/* 全局设置对话框 */}
-    <SettingsDialog />
+        {/* 批量删除确认对话框 */}
+        <Dialog open={activeDialog === "batchDelete"} onOpenChange={closeDialog}>
+          <DialogContent className="max-w-[28rem]">
+            <DialogHeader>
+              <DialogTitle>批量删除</DialogTitle>
+              <DialogDescription>
+                确定要删除 {selectedKeys.length} 个会话吗?删除后将无法恢复。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeDialog}>
+                取消
+              </Button>
+              <Button variant="destructive" onClick={confirmBatchDelete}>
+                删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </MainLayout>
+
+      {/* 全局设置对话框 */}
+      <SettingsDialog />
     </>
   );
 }

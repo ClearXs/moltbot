@@ -249,7 +249,7 @@ export function TopBar({
       </div>
 
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">连接详情</DialogTitle>
           </DialogHeader>
@@ -332,7 +332,7 @@ export function TopBar({
       </Dialog>
 
       <Dialog open={isTokenOpen} onOpenChange={setIsTokenOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-[24rem]">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">设置 Gateway Token</DialogTitle>
           </DialogHeader>
@@ -431,6 +431,10 @@ export function TopBar({
             <DropdownMenuItem onClick={() => openSettings("skills")}>
               <Settings className="w-4 h-4 mr-2" />
               Skills 管理
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openSettings("connectors")}>
+              <Settings className="w-4 h-4 mr-2" />
+              连接器管理
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openSettings("models")}>
               <Settings className="w-4 h-4 mr-2" />

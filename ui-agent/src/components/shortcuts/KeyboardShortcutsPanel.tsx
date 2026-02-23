@@ -30,7 +30,7 @@ export function KeyboardShortcutsPanel({ isOpen, onClose }: KeyboardShortcutsPan
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-[42rem]">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">键盘快捷键</DialogTitle>
         </DialogHeader>

@@ -1,16 +1,25 @@
 "use client";
 
+import Editor from "@monaco-editor/react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  ExternalLink,
+  GripHorizontal,
+  RotateCcw,
+  Save,
+} from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { ChevronLeft, ChevronRight, Copy, Download, ExternalLink, GripHorizontal, RotateCcw, Save } from "lucide-react";
-import Editor from "@monaco-editor/react";
-import type { KnowledgeDetail } from "@/services/knowledgeApi";
-import { buildHeaders, getGatewayBaseUrl } from "@/services/knowledgeApi";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import type { KnowledgeDetail } from "@/services/knowledgeApi";
+import { buildHeaders, getGatewayBaseUrl } from "@/services/knowledgeApi";
 import { UniverDocPreview } from "./UniverDocPreview";
 import { UniverSheetPreview } from "./UniverSheetPreview";
 
@@ -26,7 +35,10 @@ function escapeRegex(value: string): string {
 function highlightText(text: string, keywords: string[]) {
   if (!text || keywords.length === 0) return text;
 
-  const pattern = new RegExp(`(${keywords.map((keyword) => escapeRegex(keyword)).join("|")})`, "gi");
+  const pattern = new RegExp(
+    `(${keywords.map((keyword) => escapeRegex(keyword)).join("|")})`,
+    "gi",
+  );
   const parts = text.split(pattern);
 
   return parts.map((part, index) => {
@@ -101,10 +113,7 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   const isXlsx =
     mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     filename.endsWith(".xlsx");
-  const isCsv =
-    mime === "text/csv" ||
-    mime === "application/csv" ||
-    filename.endsWith(".csv");
+  const isCsv = mime === "text/csv" || mime === "application/csv" || filename.endsWith(".csv");
   const isPptx =
     mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
     filename.endsWith(".pptx");
@@ -149,7 +158,10 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
       const formatted = JSON.stringify(JSON.parse(editedJsonContent), null, 2);
 
       // 调用保存 API
-      const url = new URL("/api/knowledge/documents/" + detail.id + "/content", getGatewayBaseUrl());
+      const url = new URL(
+        "/api/knowledge/documents/" + detail.id + "/content",
+        getGatewayBaseUrl(),
+      );
       const response = await fetch(url.toString(), {
         method: "PUT",
         headers: {
@@ -226,7 +238,11 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
       if (!isActive) return;
       nextUrl = URL.createObjectURL(blob);
       setBlobUrl(nextUrl);
-      if (detail.mimetype.startsWith("text/") || detail.mimetype === "text/markdown" || detail.mimetype === "application/json") {
+      if (
+        detail.mimetype.startsWith("text/") ||
+        detail.mimetype === "text/markdown" ||
+        detail.mimetype === "application/json"
+      ) {
         const text = await blob.text();
         if (!isActive) return;
         setTextContent(text);
@@ -284,7 +300,7 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
       }
       canvas.height = viewport.height;
       canvas.width = viewport.width;
-      await page.render({ canvasContext: context, viewport }).promise;
+      await page.render({ canvas, canvasContext: context, viewport }).promise;
       pdfRenderingRef.current = false;
     };
     void renderPage();
@@ -416,11 +432,19 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
               <Copy className="mr-xs h-3.5 w-3.5" />
               复制
             </Button>
-            <Button size="sm" variant="outline" onClick={() => window.open(blobUrl, "_blank", "noopener")}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open(blobUrl, "_blank", "noopener")}
+            >
               <ExternalLink className="mr-xs h-3.5 w-3.5" />
               打开
             </Button>
-            <a className="text-xs text-primary hover:underline" href={blobUrl} download={detail.filename}>
+            <a
+              className="text-xs text-primary hover:underline"
+              href={blobUrl}
+              download={detail.filename}
+            >
               下载
             </a>
           </>
@@ -439,11 +463,19 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
   }
 
   if (isDocx) {
-    return blobUrl ? <UniverDocPreview documentId={detail.id} /> : <div className="text-sm text-text-tertiary">加载 Word 中...</div>;
+    return blobUrl ? (
+      <UniverDocPreview documentId={detail.id} />
+    ) : (
+      <div className="text-sm text-text-tertiary">加载 Word 中...</div>
+    );
   }
 
   if (isXlsx) {
-    return blobUrl ? <UniverSheetPreview documentId={detail.id} /> : <div className="text-sm text-text-tertiary">加载 Excel 中...</div>;
+    return blobUrl ? (
+      <UniverSheetPreview documentId={detail.id} />
+    ) : (
+      <div className="text-sm text-text-tertiary">加载 Excel 中...</div>
+    );
   }
 
   if (isCsv) {
@@ -714,7 +746,9 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
           >
             上一页
           </Button>
-          <div className="text-xs text-text-tertiary">{pdfPages ? `${pdfPage} / ${pdfPages}` : "加载中"}</div>
+          <div className="text-xs text-text-tertiary">
+            {pdfPages ? `${pdfPage} / ${pdfPages}` : "加载中"}
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -740,7 +774,9 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
             </Button>
           </div>
         </div>
-        {pdfSearchStatus && <div className="mb-sm text-xs text-text-tertiary">{pdfSearchStatus}</div>}
+        {pdfSearchStatus && (
+          <div className="mb-sm text-xs text-text-tertiary">{pdfSearchStatus}</div>
+        )}
         <div className="overflow-auto rounded-lg border border-border-light bg-white p-sm">
           <canvas ref={pdfCanvasRef} className="max-w-full" />
         </div>
@@ -887,7 +923,9 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
                     )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">{textToolbarExpanded ? "收起" : "展开"}</TooltipContent>
+                <TooltipContent side="bottom">
+                  {textToolbarExpanded ? "收起" : "展开"}
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -921,27 +959,27 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
               remarkPlugins={[remarkGfm]}
               components={{
                 p({ children }) {
-                  const content = Array.isArray(children) ? children.join("") : String(children ?? "");
+                  const content = Array.isArray(children)
+                    ? children.join("")
+                    : String(children ?? "");
                   return <p>{highlightText(content, keywords)}</p>;
                 },
                 li({ children }) {
-                  const content = Array.isArray(children) ? children.join("") : String(children ?? "");
+                  const content = Array.isArray(children)
+                    ? children.join("")
+                    : String(children ?? "");
                   return <li>{highlightText(content, keywords)}</li>;
                 },
-                code({ className, children, ...props }) {
+                code({ className, children }) {
                   const match = /language-(\w+)/.exec(className || "");
                   if (match) {
                     return (
-                      <SyntaxHighlighter language={match[1]} PreTag="div" {...props}>
+                      <SyntaxHighlighter language={match[1]} PreTag="div">
                         {String(children).replace(/\n$/, "")}
                       </SyntaxHighlighter>
                     );
                   }
-                  return (
-                    <code className="rounded bg-background-secondary px-1" {...props}>
-                      {children}
-                    </code>
-                  );
+                  return <code className="rounded bg-background-secondary px-1">{children}</code>;
                 },
               }}
             >

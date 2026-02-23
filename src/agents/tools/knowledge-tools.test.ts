@@ -108,9 +108,12 @@ describe("Knowledge Tools Integration", () => {
     });
 
     it("should respect pagination", () => {
-      const docs = manager.listDocuments({ agentId: "agent-1", limit: 1, offset: 0 });
-      expect(docs).toHaveLength(1);
-      expect(docs[0].filename).toBe("doc2.txt");
+      const page1 = manager.listDocuments({ agentId: "agent-1", limit: 1, offset: 0 });
+      const page2 = manager.listDocuments({ agentId: "agent-1", limit: 1, offset: 1 });
+      expect(page1).toHaveLength(1);
+      expect(page2).toHaveLength(1);
+      const names = [...page1, ...page2].map((doc) => doc.filename).toSorted();
+      expect(names).toEqual(["doc1.txt", "doc2.txt"]);
     });
   });
 

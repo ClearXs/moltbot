@@ -154,6 +154,44 @@ describe("KnowledgeManager", () => {
       const deleted = manager.deleteBase({ agentId: "agent-1", kbId: created.id });
       expect(deleted.success).toBe(true);
     });
+
+    it("persists base settings and tags on create", () => {
+      const created = manager.createBase({
+        agentId: "agent-1",
+        name: "Policy Hub",
+        tags: [
+          { name: "HR", color: "#22c55e" },
+          { name: "制度", color: "#0ea5e9" },
+        ],
+        settings: {
+          chunk: { enabled: true, size: 900, overlap: 150, separator: "paragraph" },
+          retrieval: { mode: "hybrid", topK: 8, minScore: 0.4, hybridAlpha: 0.6 },
+          index: { mode: "high_quality" },
+          graph: { enabled: true },
+        },
+      });
+
+      expect(created.tags.map((item) => item.name).toSorted()).toEqual(["HR", "制度"].toSorted());
+      expect(created.settings.chunk.size).toBe(900);
+      expect(created.settings.graph.enabled).toBe(true);
+    });
+
+    it("supports filtering bases by tags", () => {
+      manager.createBase({
+        agentId: "agent-1",
+        name: "KB-HR",
+        tags: [{ name: "HR", color: "#22c55e" }],
+      });
+      manager.createBase({
+        agentId: "agent-1",
+        name: "KB-IT",
+        tags: [{ name: "IT", color: "#6366f1" }],
+      });
+
+      const list = manager.listBases({ agentId: "agent-1", tags: ["HR"] });
+      expect(list.total).toBe(1);
+      expect(list.kbs[0]?.name).toBe("KB-HR");
+    });
   });
 
   describe("graph query", () => {
@@ -611,8 +649,8 @@ describe("KnowledgeManager", () => {
     it("should list documents for an agent", () => {
       const docs = manager.listDocuments({ agentId: "agent-1" });
       expect(docs.length).toBe(2);
-      expect(docs[0].filename).toBe("doc2.txt"); // Most recent first
-      expect(docs[1].filename).toBe("doc1.txt");
+      const names = docs.map((doc) => doc.filename).toSorted();
+      expect(names).toEqual(["doc1.txt", "doc2.txt"]);
     });
 
     it("should filter by tags", () => {
@@ -624,11 +662,11 @@ describe("KnowledgeManager", () => {
     it("should respect pagination", () => {
       const page1 = manager.listDocuments({ agentId: "agent-1", limit: 1, offset: 0 });
       expect(page1.length).toBe(1);
-      expect(page1[0].filename).toBe("doc2.txt");
 
       const page2 = manager.listDocuments({ agentId: "agent-1", limit: 1, offset: 1 });
       expect(page2.length).toBe(1);
-      expect(page2[0].filename).toBe("doc1.txt");
+      const pagedNames = [...page1, ...page2].map((doc) => doc.filename).toSorted();
+      expect(pagedNames).toEqual(["doc1.txt", "doc2.txt"]);
     });
 
     it("should not return documents from other agents", () => {

@@ -1,16 +1,21 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
+import { installClawHubSkill } from "../../agents/skills-install-clawhub.js";
 import { installSkill } from "../../agents/skills-install.js";
 import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
 import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.js";
 import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
+import { isWithinDir } from "../../infra/path-safety.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
+import { CONFIG_DIR } from "../../utils.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
 import {
   ErrorCodes,
@@ -126,8 +131,23 @@ export const skillsHandlers: GatewayRequestHandlers = {
     const p = params as {
       name: string;
       installId: string;
+      version?: string;
       timeoutMs?: number;
     };
+    if (p.installId === "clawhub") {
+      const result = await installClawHubSkill({
+        slug: p.name,
+        version: p.version,
+        timeoutMs: p.timeoutMs,
+        managedSkillsDir: path.join(CONFIG_DIR, "skills"),
+      });
+      respond(
+        result.ok,
+        result,
+        result.ok ? undefined : errorShape(ErrorCodes.UNAVAILABLE, result.message),
+      );
+      return;
+    }
     const cfg = loadConfig();
     const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
     const result = await installSkill({
@@ -142,6 +162,95 @@ export const skillsHandlers: GatewayRequestHandlers = {
       result,
       result.ok ? undefined : errorShape(ErrorCodes.UNAVAILABLE, result.message),
     );
+  },
+  "skills.getCode": async ({ params, respond }) => {
+    const p = params as {
+      skillKey?: unknown;
+      filePath?: unknown;
+    };
+    const skillKey = typeof p.skillKey === "string" ? p.skillKey.trim() : "";
+    if (!skillKey) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "skills.getCode requires skillKey"),
+      );
+      return;
+    }
+
+    const requestedFile = typeof p.filePath === "string" ? p.filePath.trim() : "SKILL.md";
+    if (!requestedFile) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "skills.getCode requires filePath"),
+      );
+      return;
+    }
+    if (path.isAbsolute(requestedFile)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "filePath must be relative"),
+      );
+      return;
+    }
+
+    const cfg = loadConfig();
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+    const entries = loadWorkspaceSkillEntries(workspaceDir, { config: cfg });
+    const entry = entries.find((item) => {
+      const entrySkillKey = item.metadata?.skillKey ?? item.skill.name;
+      return entrySkillKey === skillKey;
+    });
+    if (!entry) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, `skill not found: ${skillKey}`),
+      );
+      return;
+    }
+
+    const baseDir = path.resolve(entry.skill.baseDir);
+    const resolvedPath = path.resolve(baseDir, requestedFile);
+    if (!isWithinDir(baseDir, resolvedPath)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "filePath escapes skill directory"),
+      );
+      return;
+    }
+
+    try {
+      const stat = await fs.stat(resolvedPath);
+      if (!stat.isFile()) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `file not found: ${requestedFile}`),
+        );
+        return;
+      }
+      const MAX_PREVIEW_BYTES = 256_000;
+      if (stat.size > MAX_PREVIEW_BYTES) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `file too large for preview (${stat.size} bytes, max ${MAX_PREVIEW_BYTES})`,
+          ),
+        );
+        return;
+      }
+      const content = await fs.readFile(resolvedPath, "utf8");
+      respond(true, { content, files: [requestedFile] }, undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, message));
+    }
   },
   "skills.update": async ({ params, respond }) => {
     if (!validateSkillsUpdateParams(params)) {

@@ -1,14 +1,12 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
 
 /* 导入设计令牌 - Import design tokens */
 @import "../styles/design-tokens.css";
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html,
@@ -17,6 +15,7 @@ body {
 }
 
 body {
+  margin: 0;
   background-color: var(--background);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -28,8 +27,8 @@ body {
 
 /* ==================== 自定义滚动条样式 / Custom Scrollbar ==================== */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {

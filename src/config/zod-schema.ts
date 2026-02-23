@@ -102,6 +102,25 @@ const HttpUrlSchema = z
     return protocol === "http:" || protocol === "https:";
   }, "Expected http:// or https:// URL");
 
+const ConnectorTypeSchema = z.union([
+  z.literal("app"),
+  z.literal("custom_api"),
+  z.literal("custom_mcp"),
+]);
+
+const ConnectorTransportSchema = z.union([
+  z.literal("http"),
+  z.literal("sse"),
+  z.literal("stdio"),
+  z.literal("websocket"),
+]);
+
+const ConnectorAuthModeSchema = z.union([
+  z.literal("none"),
+  z.literal("api_key"),
+  z.literal("oauth"),
+]);
+
 export const OpenClawSchema = z
   .object({
     $schema: z.string().optional(),
@@ -614,6 +633,93 @@ export const OpenClawSchema = z
                 apiKey: z.string().optional().register(sensitive),
                 env: z.record(z.string(), z.string()).optional(),
                 config: z.record(z.string(), z.unknown()).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    connectors: z
+      .object({
+        entries: z
+          .record(
+            z.string(),
+            z
+              .object({
+                type: ConnectorTypeSchema,
+                name: z.string().optional(),
+                description: z.string().optional(),
+                icon: z.string().optional(),
+                enabled: z.boolean().optional(),
+                authMode: ConnectorAuthModeSchema.optional(),
+                status: z
+                  .union([
+                    z.literal("connected"),
+                    z.literal("disconnected"),
+                    z.literal("error"),
+                    z.literal("draft"),
+                  ])
+                  .optional(),
+                config: z.record(z.string(), z.unknown()).optional(),
+                oauth: z
+                  .object({
+                    provider: z.string().optional(),
+                    scopes: z.array(z.string()).optional(),
+                    accessToken: z.string().optional().register(sensitive),
+                    refreshToken: z.string().optional().register(sensitive),
+                    tokenType: z.string().optional(),
+                    scope: z.string().optional(),
+                    expiresAt: z.number().int().nonnegative().optional(),
+                    connectedAt: z.number().int().nonnegative().optional(),
+                  })
+                  .strict()
+                  .optional(),
+                customApi: z
+                  .object({
+                    note: z.string().optional(),
+                    secrets: z.record(z.string(), z.string().register(sensitive)).optional(),
+                  })
+                  .strict()
+                  .optional(),
+                customMcp: z
+                  .object({
+                    transport: ConnectorTransportSchema.optional(),
+                    serverUrl: z.string().optional(),
+                    command: z.string().optional(),
+                    args: z.array(z.string()).optional(),
+                    env: z.record(z.string(), z.string().register(sensitive)).optional(),
+                    headers: z.record(z.string(), z.string().register(sensitive)).optional(),
+                    note: z.string().optional(),
+                  })
+                  .strict()
+                  .optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+        sessions: z
+          .record(
+            z.string(),
+            z
+              .object({
+                connectorIds: z.array(z.string()).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+        oauthProviders: z
+          .record(
+            z.string(),
+            z
+              .object({
+                authorizeUrl: z.string().optional(),
+                tokenUrl: z.string().optional(),
+                clientId: z.string().optional(),
+                clientSecret: z.string().optional().register(sensitive),
+                scopes: z.array(z.string()).optional(),
+                extraAuthorizeParams: z.record(z.string(), z.string()).optional(),
+                extraTokenParams: z.record(z.string(), z.string()).optional(),
               })
               .strict(),
           )

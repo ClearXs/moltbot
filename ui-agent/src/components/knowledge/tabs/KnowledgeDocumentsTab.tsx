@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   Ellipsis,
   FileCode2,
@@ -11,6 +10,7 @@ import {
   Presentation,
   Trash2,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { KnowledgeDocDetail } from "@/components/knowledge/KnowledgeDocDetail";
 import { DropZone } from "@/components/knowledge/upload/DropZone";
 import { UploadQueue } from "@/components/knowledge/upload/UploadQueue";
@@ -147,7 +147,7 @@ export function KnowledgeDocumentsTab({
   return (
     <div className="flex h-full min-h-0 flex-col gap-lg">
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle>上传文档</DialogTitle>
           </DialogHeader>
@@ -211,7 +211,8 @@ export function KnowledgeDocumentsTab({
             />
             {uploadQueue.length > 0 && (
               <div className="text-xs text-text-tertiary">
-                队列总数 {summary.total} · 等待 {summary.pending} · 上传中 {summary.uploading} · 成功 {summary.success} · 失败 {summary.error}
+                队列总数 {summary.total} · 等待 {summary.pending} · 上传中 {summary.uploading} ·
+                成功 {summary.success} · 失败 {summary.error}
               </div>
             )}
             <div className="flex justify-end gap-sm">
@@ -255,7 +256,7 @@ export function KnowledgeDocumentsTab({
         </DialogContent>
       </Dialog>
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle>编辑文档信息</DialogTitle>
           </DialogHeader>
@@ -322,7 +323,7 @@ export function KnowledgeDocumentsTab({
         </DialogContent>
       </Dialog>
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-[24rem]">
           <DialogHeader>
             <DialogTitle>删除文档</DialogTitle>
           </DialogHeader>

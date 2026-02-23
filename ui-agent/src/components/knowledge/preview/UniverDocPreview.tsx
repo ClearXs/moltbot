@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
 import { IUniverInstanceService, LocaleType, Univer, UniverInstanceType } from "@univerjs/core";
 import { defaultTheme } from "@univerjs/design";
 import { UniverDocsPlugin } from "@univerjs/docs";
 import { IEditorService, UniverDocsUIPlugin } from "@univerjs/docs-ui";
+import docsUiZhCN from "@univerjs/docs-ui/locale/zh-CN";
 import { IRenderManagerService, UniverRenderEnginePlugin } from "@univerjs/engine-render";
 import { UniverUIPlugin } from "@univerjs/ui";
 import uiZhCN from "@univerjs/ui/locale/zh-CN";
-import docsUiZhCN from "@univerjs/docs-ui/locale/zh-CN";
+import { Loader2, AlertCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { buildHeaders, getGatewayBaseUrl } from "@/services/knowledgeApi";
-
 import "@univerjs/design/lib/index.css";
 import "@univerjs/ui/lib/index.css";
 import "@univerjs/docs-ui/lib/index.css";
@@ -114,7 +113,9 @@ export function UniverDocPreview({ documentId, onError }: UniverDocPreviewProps)
 
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`Failed to load document: ${response.status} ${response.statusText} ${errorText}`);
+          throw new Error(
+            `Failed to load document: ${response.status} ${response.statusText} ${errorText}`,
+          );
         }
 
         const result = await response.json();
@@ -158,12 +159,17 @@ export function UniverDocPreview({ documentId, onError }: UniverDocPreviewProps)
       | { get?: (token: unknown) => unknown }
       | undefined;
 
-    const unitId = typeof (docUnit as { getUnitId?: () => string }).getUnitId === "function"
-      ? (docUnit as { getUnitId: () => string }).getUnitId()
-      : "";
+    const unitId =
+      typeof (docUnit as { getUnitId?: () => string }).getUnitId === "function"
+        ? (docUnit as { getUnitId: () => string }).getUnitId()
+        : "";
 
-    const instanceService = injector?.get?.(IUniverInstanceService) as IUniverInstanceService | undefined;
-    const renderManagerService = injector?.get?.(IRenderManagerService) as IRenderManagerService | undefined;
+    const instanceService = injector?.get?.(IUniverInstanceService) as
+      | IUniverInstanceService
+      | undefined;
+    const renderManagerService = injector?.get?.(IRenderManagerService) as
+      | IRenderManagerService
+      | undefined;
     const editorService = injector?.get?.(IEditorService) as IEditorService | undefined;
 
     const ensureActiveUnit = () => {
@@ -182,24 +188,30 @@ export function UniverDocPreview({ documentId, onError }: UniverDocPreviewProps)
       if (!render) return;
       const scene = render.scene;
       const target = event.target as HTMLElement | null;
-      const x = typeof (event as WheelEvent & { offsetX?: number }).offsetX === "number"
-        ? (event as WheelEvent & { offsetX: number }).offsetX
-        : target?.getBoundingClientRect
-          ? event.clientX - target.getBoundingClientRect().left
-          : 0;
-      const y = typeof (event as WheelEvent & { offsetY?: number }).offsetY === "number"
-        ? (event as WheelEvent & { offsetY: number }).offsetY
-        : target?.getBoundingClientRect
-          ? event.clientY - target.getBoundingClientRect().top
-          : 0;
+      const x =
+        typeof (event as WheelEvent & { offsetX?: number }).offsetX === "number"
+          ? (event as WheelEvent & { offsetX: number }).offsetX
+          : target?.getBoundingClientRect
+            ? event.clientX - target.getBoundingClientRect().left
+            : 0;
+      const y =
+        typeof (event as WheelEvent & { offsetY?: number }).offsetY === "number"
+          ? (event as WheelEvent & { offsetY: number }).offsetY
+          : target?.getBoundingClientRect
+            ? event.clientY - target.getBoundingClientRect().top
+            : 0;
       const activeViewport =
         scene.getActiveViewportByCoord({ x, y } as never) ??
         scene.getViewport("viewMain") ??
         scene.getMainViewport();
       if (!activeViewport) return;
       activeViewport.onMouseWheel(
-        event,
-        { stopPropagation: () => {} } as unknown as { stopPropagation: () => void },
+        event as unknown as never,
+        {
+          stopPropagation: () => {},
+          skipNextObservers: false,
+          isStopPropagation: false,
+        } as unknown as never,
       );
     };
 
@@ -236,7 +248,7 @@ export function UniverDocPreview({ documentId, onError }: UniverDocPreviewProps)
         <AlertCircle className="h-12 w-12 text-destructive" />
         <div className="text-center space-y-2">
           <p className="text-base font-medium">加载失败</p>
-          <p className="text-sm text-muted-foreground max-w-md">{error}</p>
+          <p className="text-sm text-muted-foreground max-w-[28rem]">{error}</p>
         </div>
       </div>
     );

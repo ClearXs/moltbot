@@ -86,7 +86,7 @@ export type KnowledgeSettingsResponse = {
   };
   graph: {
     enabled: boolean;
-    extractor: string;
+    extractor: "llm";
     provider: string;
     model: string;
     minTriples: number;
@@ -103,11 +103,49 @@ export type KnowledgeBase = {
   description?: string;
   icon?: string;
   visibility?: "private" | "team" | "public";
+  tags?: KnowledgeBaseTag[];
+  settings?: KnowledgeBaseRuntimeSettings;
+  documentCount?: number;
   createdAt: string;
   updatedAt: string;
   stats?: {
     totalTriples?: number;
     totalEntities?: number;
+  };
+};
+
+export type KnowledgeBaseTag = {
+  tagId: string;
+  name: string;
+  color: string | null;
+};
+
+export type KnowledgeBaseTagInput = {
+  name: string;
+  color?: string;
+};
+
+export type KnowledgeBaseRuntimeSettings = {
+  vectorization: {
+    enabled: boolean;
+  };
+  chunk: {
+    enabled: boolean;
+    size: number;
+    overlap: number;
+    separator: "auto" | "paragraph" | "sentence";
+  };
+  retrieval: {
+    mode: "semantic" | "keyword" | "hybrid";
+    topK: number;
+    minScore: number;
+    hybridAlpha: number;
+  };
+  index: {
+    mode: "high_quality" | "balanced";
+  };
+  graph: {
+    enabled: boolean;
   };
 };
 
@@ -123,6 +161,8 @@ export type KnowledgeBaseCreateParams = {
   description?: string;
   icon?: string;
   visibility?: "private" | "team" | "public";
+  tags?: KnowledgeBaseTagInput[];
+  settings?: Partial<KnowledgeBaseRuntimeSettings>;
 };
 
 export type KnowledgeBaseUpdateParams = {
@@ -131,6 +171,7 @@ export type KnowledgeBaseUpdateParams = {
   description?: string;
   icon?: string;
   visibility?: "private" | "team" | "public";
+  tags?: KnowledgeBaseTagInput[];
 };
 
 export type KnowledgeSearchResult = {
@@ -474,6 +515,107 @@ export async function getKnowledgeSettings(): Promise<KnowledgeSettingsResponse>
     throw new Error(data?.message || "设置加载失败");
   }
   return data as KnowledgeSettingsResponse;
+}
+
+export async function getKnowledgeBaseSettings(
+  kbId: string,
+): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
+  const url = buildGatewayUrl("/api/knowledge/base/settings");
+  url.searchParams.set("kbId", kbId);
+  const response = await fetch(url.toString(), { headers: buildHeaders() });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "知识库设置加载失败");
+  }
+  return data as { kbId: string; settings: KnowledgeBaseRuntimeSettings };
+}
+
+export async function updateKnowledgeBaseSettings(params: {
+  kbId: string;
+  settings: Partial<KnowledgeBaseRuntimeSettings>;
+}): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
+  const url = buildGatewayUrl("/api/knowledge/base/settings");
+  const response = await fetch(url.toString(), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "知识库设置更新失败");
+  }
+  return data as { kbId: string; settings: KnowledgeBaseRuntimeSettings };
+}
+
+export async function listKnowledgeTags(): Promise<{ tags: KnowledgeBaseTag[] }> {
+  const url = buildGatewayUrl("/api/knowledge/tags");
+  const response = await fetch(url.toString(), { headers: buildHeaders() });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "标签列表加载失败");
+  }
+  return data as { tags: KnowledgeBaseTag[] };
+}
+
+export async function createKnowledgeTag(params: {
+  name: string;
+  color?: string;
+}): Promise<KnowledgeBaseTag> {
+  const url = buildGatewayUrl("/api/knowledge/tags");
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "创建标签失败");
+  }
+  return data as KnowledgeBaseTag;
+}
+
+export async function updateKnowledgeTag(params: {
+  tagId: string;
+  name?: string;
+  color?: string;
+}): Promise<KnowledgeBaseTag> {
+  const url = buildGatewayUrl("/api/knowledge/tags");
+  const response = await fetch(url.toString(), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "更新标签失败");
+  }
+  return data as KnowledgeBaseTag;
+}
+
+export async function deleteKnowledgeTag(tagId: string): Promise<{ success: boolean }> {
+  const url = buildGatewayUrl("/api/knowledge/tags/delete");
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildHeaders(),
+    },
+    body: JSON.stringify({ tagId }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.message || "删除标签失败");
+  }
+  return data as { success: boolean };
 }
 
 export async function updateKnowledgeSettings(params: {

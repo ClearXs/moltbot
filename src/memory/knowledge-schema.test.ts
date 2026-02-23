@@ -41,6 +41,35 @@ describe("ensureKnowledgeSchema", () => {
     expect(tables).toHaveLength(1);
   });
 
+  it("creates kb_base_settings table", () => {
+    ensureKnowledgeSchema(db);
+
+    const tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='kb_base_settings'`)
+      .all();
+
+    expect(tables).toHaveLength(1);
+
+    const columns = db.prepare(`PRAGMA table_info(kb_base_settings)`).all() as Array<{
+      name: string;
+    }>;
+    expect(columns.map((column) => column.name)).toContain("vectorization_config");
+  });
+
+  it("creates kb_tag_defs and kb_base_tags tables", () => {
+    ensureKnowledgeSchema(db);
+
+    const tagDefs = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='kb_tag_defs'`)
+      .all();
+    const baseTags = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='kb_base_tags'`)
+      .all();
+
+    expect(tagDefs).toHaveLength(1);
+    expect(baseTags).toHaveLength(1);
+  });
+
   it("creates required indexes", () => {
     ensureKnowledgeSchema(db);
 
@@ -52,6 +81,9 @@ describe("ensureKnowledgeSchema", () => {
     expect(indexNames).toContain("idx_kb_tags_tag");
     expect(indexNames).toContain("idx_kb_documents_agent");
     expect(indexNames).toContain("idx_kb_documents_uploaded");
+    expect(indexNames).toContain("idx_kb_base_settings_agent");
+    expect(indexNames).toContain("idx_kb_tag_defs_agent");
+    expect(indexNames).toContain("idx_kb_base_tags_tag");
   });
 
   it("allows inserting document metadata", () => {
@@ -179,6 +211,6 @@ describe("ensureKnowledgeSchema", () => {
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'kb_%'`)
       .all();
 
-    expect(tables).toHaveLength(2); // kb_documents and kb_tags
+    expect(tables).toHaveLength(7); // kb_documents, kb_tags, kb_settings, kb_bases, kb_base_settings, kb_tag_defs, kb_base_tags
   });
 });
