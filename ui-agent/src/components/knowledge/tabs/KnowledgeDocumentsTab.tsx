@@ -68,13 +68,11 @@ export function KnowledgeDocumentsTab({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFilename, setEditFilename] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editTags, setEditTags] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -163,10 +161,6 @@ export function KnowledgeDocumentsTab({
                     setUploadFile(files[0]);
                     addFiles(files, {
                       description: description.trim() || undefined,
-                      tags: tags
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
                     });
                   }
                 }}
@@ -180,23 +174,11 @@ export function KnowledgeDocumentsTab({
                 placeholder="可选"
               />
             </div>
-            <div>
-              <div className="text-xs text-text-tertiary mb-xs">标签（逗号分隔）</div>
-              <Input
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                placeholder="例如: hr,policy"
-              />
-            </div>
             {uploadError && <div className="text-xs text-error">{uploadError}</div>}
             <DropZone
               onFilesSelected={(files) => {
                 addFiles(files, {
                   description: description.trim() || undefined,
-                  tags: tags
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean),
                 });
                 if (!uploadFile && files[0]) {
                   setUploadFile(files[0]);
@@ -235,15 +217,10 @@ export function KnowledgeDocumentsTab({
                       return;
                     }
                     if (!uploadFile) return;
-                    const tagList = tags
-                      .split(",")
-                      .map((t) => t.trim())
-                      .filter(Boolean);
-                    await uploadDocument(uploadFile, description.trim() || undefined, tagList);
+                    await uploadDocument(uploadFile, description.trim() || undefined);
                     setUploadOpen(false);
                     setUploadFile(null);
                     setDescription("");
-                    setTags("");
                   } catch (error) {
                     setUploadError(error instanceof Error ? error.message : "上传失败");
                   }
@@ -273,14 +250,6 @@ export function KnowledgeDocumentsTab({
                 placeholder="可选"
               />
             </div>
-            <div>
-              <div className="mb-xs text-xs text-text-tertiary">标签（逗号分隔）</div>
-              <Input
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="例如: hr, policy"
-              />
-            </div>
             {editError ? <div className="text-xs text-error">{editError}</div> : null}
             <div className="flex justify-end gap-sm">
               <Button
@@ -303,10 +272,6 @@ export function KnowledgeDocumentsTab({
                       documentId: editingId,
                       filename: editFilename.trim(),
                       description: editDescription,
-                      tags: editTags
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
                     });
                     setEditOpen(false);
                   } catch (error) {
@@ -323,7 +288,7 @@ export function KnowledgeDocumentsTab({
         </DialogContent>
       </Dialog>
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-[24rem]">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle>删除文档</DialogTitle>
           </DialogHeader>
@@ -339,6 +304,7 @@ export function KnowledgeDocumentsTab({
                 取消
               </Button>
               <Button
+                variant="default"
                 size="sm"
                 className="bg-error text-white hover:bg-error/90"
                 disabled={!deletingId || isDeleting}
@@ -428,7 +394,6 @@ export function KnowledgeDocumentsTab({
                             setEditingId(id);
                             setEditFilename(doc?.filename ?? "");
                             setEditDescription(doc?.description ?? "");
-                            setEditTags((doc?.tags ?? []).join(", "));
                             setEditError(null);
                             setEditOpen(true);
                           }}
@@ -452,7 +417,8 @@ export function KnowledgeDocumentsTab({
                     </DropdownMenu>
                   </div>
                   <div className="truncate text-[11px] text-text-tertiary">
-                    {documentsById[id]?.tags?.join(" / ") || "无标签"}
+                    {documentsById[id]?.indexed ? "已索引" : "索引中"} ·{" "}
+                    {documentsById[id]?.size ? (documentsById[id].size / 1024).toFixed(1) : "0"} KB
                   </div>
                 </div>
               ))

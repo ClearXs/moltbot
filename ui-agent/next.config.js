@@ -15,6 +15,11 @@ const nextConfig = {
         source: "/api/:path*",
         destination: `${backendUrl}/api/:path*`,
       },
+      {
+        // Proxy /files/ requests to backend workspace files
+        source: "/files/:path*",
+        destination: `${backendUrl}/files/:path*`,
+      },
     ];
   },
 };

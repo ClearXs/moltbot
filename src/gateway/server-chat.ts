@@ -228,7 +228,13 @@ export function createAgentEventHandler({
   clearAgentRunContext,
   toolEventRecipients,
 }: AgentEventHandlerOptions) {
-  const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
+  const emitChatDelta = (
+    sessionKey: string,
+    clientRunId: string,
+    seq: number,
+    text: string,
+    turnId?: string,
+  ) => {
     if (isSilentReplyText(text, SILENT_REPLY_TOKEN)) {
       return;
     }

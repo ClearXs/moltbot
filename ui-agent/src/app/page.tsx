@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ComputerPanelWrapper } from "@/components/agent/ComputerPanelWrapper";
 import { EnhancedChatInput } from "@/components/chat/EnhancedChatInput";
 import { MessageList, Message } from "@/components/chat/MessageList";
+import { SessionDocuments } from "@/components/chat/SessionDocuments";
+import { SessionPreviewPanel } from "@/components/chat/SessionPreviewPanel";
+import { SettingsPanel } from "@/components/desk-pet/SettingsPanel";
+import { VirtualAssistantPage } from "@/components/desk-pet/VirtualAssistantPage";
 import { FileItemProps } from "@/components/files/FileList";
 import { KnowledgeBasePage } from "@/components/knowledge/KnowledgeBasePage";
 import MainLayout from "@/components/layout/MainLayout";
@@ -20,13 +24,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { WelcomePage } from "@/components/welcome/WelcomePage";
 import { StreamingReplayProvider, useStreamingReplay } from "@/contexts/StreamingReplayContext";
+import { fetchAgents } from "@/features/persona/services/personaApi";
+import type { AgentInfo } from "@/features/persona/types/persona";
+import { isPageIndexSupported } from "@/services/pageindexApi";
 import { useConnectionStore } from "@/stores/connectionStore";
+import { useSessionDocumentStore } from "@/stores/sessionDocumentStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useToastStore } from "@/stores/toastStore";
 
 type ConnectorItem = {
   id: string;
   name: string;
+  icon?: string;
   status?: "connected" | "disconnected" | "error" | "draft";
 };
 
@@ -61,7 +70,9 @@ function HomeContent() {
   const { status, wsClient } = useConnectionStore();
   const { addToast } = useToastStore();
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [activeMainView, setActiveMainView] = useState<"chat" | "knowledge">("chat");
+  const [activeMainView, setActiveMainView] = useState<"chat" | "knowledge" | "persona">("chat");
+  const [assistantVisible, setAssistantVisible] = useState(true);
+  const [personaSettingsOpen, setPersonaSettingsOpen] = useState(false);
   const { isStreaming, startStreaming, stopStreaming } = useStreamingReplay();
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [detailSessionKey, setDetailSessionKey] = useState<string | null>(null);
@@ -69,7 +80,6 @@ function HomeContent() {
   const [historyErrors, setHistoryErrors] = useState<Record<string, string>>({});
   const [historyLimits, setHistoryLimits] = useState<Record<string, number>>({});
   const historyDefaultLimit = 200;
-  const historyMaxLimit = 1000;
   const [toolEventsByRun, setToolEventsByRun] = useState<
     Record<
       string,
@@ -94,6 +104,7 @@ function HomeContent() {
   const [toolStartTimes, setToolStartTimes] = useState<Record<string, number>>({});
   const usageAppliedByRunKeyRef = useRef<Record<string, boolean>>({});
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [draftMessage, setDraftMessage] = useState("");
   const [draftAttachments, setDraftAttachments] = useState<File[]>([]);
   const [highlightDraft, setHighlightDraft] = useState(false);
@@ -147,6 +158,25 @@ function HomeContent() {
       });
     }
   }, [addToast, wsClient]);
+
+  // Session 文档预览面板包装器
+  const SessionPreviewPanelWrapper = useCallback(({ sessionKey }: { sessionKey: string }) => {
+    const { previewDocumentId, previewHighlightPage, previewHighlightText, closePreview } =
+      useSessionDocumentStore();
+
+    const handleClose = useCallback(() => {
+      closePreview();
+    }, [closePreview]);
+
+    return (
+      <SessionPreviewPanel
+        documentId={previewDocumentId}
+        highlightPage={previewHighlightPage}
+        highlightText={previewHighlightText}
+        onClose={handleClose}
+      />
+    );
+  }, []);
 
   const loadSessionConnectors = useCallback(
     async (sessionKey: string) => {
@@ -209,9 +239,11 @@ function HomeContent() {
   }, [currentConversationId]);
 
   const extractMessageText = useCallback((content: unknown): string => {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
+    let text: string;
+    if (typeof content === "string") {
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
         .map((part) => {
           if (part && typeof part === "object" && "text" in part) {
             const value = (part as { text?: string }).text;
@@ -221,8 +253,17 @@ function HomeContent() {
         })
         .filter(Boolean)
         .join("\n");
+    } else {
+      text = "";
     }
-    return "";
+    // 过滤掉 Conversation info 元数据块
+    // 匹配从 "Conversation info (untrusted metadata):" 到下一个以 [ 开头的时间戳格式之前的所有内容
+    text = text.replace(/Conversation info \(untrusted metadata\):[\s\S]*?```[\s\S]*?```\n*/g, "");
+    text = text.replace(/Sender \(untrusted metadata\):[\s\S]*?```[\s\S]*?```\n*/g, "");
+    text = text.replace(/Thread starter \(untrusted metadata\):[\s\S]*?```[\s\S]*?```\n*/g, "");
+    // 过滤掉消息前面的时间戳 [Fri 2026-02-27 08:56 GMT+8]
+    text = text.replace(/^\[.*?\]\s*/g, "");
+    return text.trim();
   }, []);
 
   const normalizeUsage = useCallback((usage: unknown) => {
@@ -265,9 +306,8 @@ function HomeContent() {
     [],
   );
 
-  const resolveGroupKey = useCallback((sessionKey: string, runId: string, turnId?: string) => {
-    const groupId = typeof turnId === "string" && turnId.trim() ? turnId : runId;
-    return `${sessionKey}:${groupId}`;
+  const resolveGroupKey = useCallback((sessionKey: string, runId: string) => {
+    return `${sessionKey}:${runId}`;
   }, []);
 
   const mergeToolCalls = useCallback(
@@ -418,6 +458,12 @@ function HomeContent() {
               : new Date();
 
         const toolCalls: Array<{ id?: string; name?: string; arguments?: unknown }> = [];
+        const toolResults: Array<{
+          toolCallId?: string;
+          toolName?: string;
+          content?: string;
+          isError?: boolean;
+        }> = [];
         if (Array.isArray(raw?.content)) {
           raw.content.forEach((part) => {
             if (!part || typeof part !== "object") return;
@@ -426,16 +472,44 @@ function HomeContent() {
               id?: string;
               name?: string;
               arguments?: unknown;
+              tool_use_id?: string;
+              content?: unknown;
+              is_error?: boolean;
+              toolUse?: { id?: string; name?: string; input?: unknown };
+              toolResult?: {
+                tool_use_id?: string;
+                content?: string;
+                is_error?: boolean;
+                name?: string;
+              };
             };
+            // Extract tool calls
             if (
               entry.type === "toolCall" ||
               entry.type === "toolUse" ||
-              entry.type === "functionCall"
+              entry.type === "functionCall" ||
+              entry.type === "tool_use"
             ) {
               toolCalls.push({
-                id: entry.id,
-                name: entry.name,
-                arguments: entry.arguments,
+                id: entry.id ?? entry.toolUse?.id,
+                name: entry.name ?? entry.toolUse?.name,
+                arguments: entry.arguments ?? entry.toolUse?.input,
+              });
+            }
+            // Extract tool results
+            if (
+              entry.type === "toolResult" ||
+              entry.type === "tool_result" ||
+              entry.type === "tool_result_multiple"
+            ) {
+              const resultContent = extractMessageText(
+                entry.content ?? entry.toolResult?.content ?? "",
+              );
+              toolResults.push({
+                toolCallId: entry.tool_use_id ?? entry.toolResult?.tool_use_id,
+                toolName: entry.name ?? entry.toolResult?.name,
+                content: resultContent,
+                isError: entry.is_error ?? entry.toolResult?.is_error,
               });
             }
           });
@@ -448,6 +522,7 @@ function HomeContent() {
           timestamp,
           usage: normalizeUsage(raw?.usage),
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          toolResults: toolResults.length > 0 ? toolResults : undefined,
         });
       });
       return normalized;
@@ -465,9 +540,21 @@ function HomeContent() {
           : (historyLimits[sessionKey] ?? historyDefaultLimit);
       setHistoryLoadingKey(sessionKey);
       try {
-        const result = await wsClient.sendRequest<{ messages?: unknown[] }>("chat.history", {
+        // First, get the total count to determine how many messages to load
+        const countResult = await wsClient.sendRequest<{
+          totalMessages?: number;
+        }>("chat.history", {
           sessionKey,
-          limit,
+          limit: 1,
+        });
+        const totalToLoad = countResult?.totalMessages ? countResult.totalMessages + 100 : limit;
+
+        const result = await wsClient.sendRequest<{
+          messages?: unknown[];
+          totalMessages?: number;
+        }>("chat.history", {
+          sessionKey,
+          limit: totalToLoad,
         });
         const history = normalizeHistoryMessages(result?.messages ?? []);
         setConversationMessages((prev) => {
@@ -482,7 +569,7 @@ function HomeContent() {
         });
         setHistoryLimits((prev) => ({
           ...prev,
-          [sessionKey]: limit,
+          [sessionKey]: result?.totalMessages ? result.totalMessages + 100 : limit,
         }));
         setHistoryErrors((prev) => {
           if (!prev[sessionKey]) return prev;
@@ -523,7 +610,6 @@ function HomeContent() {
     const handleChatEvent = (payload: unknown) => {
       const data = payload as {
         runId?: string;
-        turnId?: string;
         sessionKey?: string;
         state?: "delta" | "final" | "error";
         message?: { role?: string; content?: unknown; timestamp?: number };
@@ -532,7 +618,6 @@ function HomeContent() {
       };
       const sessionKey = typeof data.sessionKey === "string" ? data.sessionKey : undefined;
       const runId = typeof data.runId === "string" ? data.runId : undefined;
-      const turnId = typeof data.turnId === "string" ? data.turnId : undefined;
       if (!sessionKey || !runId) return;
       if (data.message?.role === "user") {
         return;
@@ -541,7 +626,7 @@ function HomeContent() {
       const text = extractMessageText(data.message?.content ?? "");
       const timestampValue = data.message?.timestamp;
       const timestamp = typeof timestampValue === "number" ? new Date(timestampValue) : new Date();
-      const groupKey = resolveGroupKey(sessionKey, runId, turnId);
+      const groupKey = resolveGroupKey(sessionKey, runId);
       const messageId = `assistant-${groupKey}`;
       const toolData = toolEventsByRun[groupKey];
       const normalizedUsage = normalizeUsage(data.usage);
@@ -557,6 +642,7 @@ function HomeContent() {
             role: "assistant",
             content: errorText,
             timestamp: new Date(),
+            status: undefined, // 清除等待状态
             toolCalls: toolData?.toolCalls,
             toolResults: toolData?.toolResults,
           };
@@ -579,6 +665,7 @@ function HomeContent() {
           role: "assistant",
           content: text,
           timestamp,
+          status: undefined, // 清除等待状态
           usage: mergeUsage(
             index >= 0 ? messages[index]?.usage : undefined,
             normalizedUsage,
@@ -623,7 +710,6 @@ function HomeContent() {
     const handleAgentEvent = (payload: unknown) => {
       const data = payload as {
         runId?: string;
-        turnId?: string;
         sessionKey?: string;
         stream?: string;
         data?: {
@@ -639,13 +725,12 @@ function HomeContent() {
       if (data.stream !== "tool") return;
       const sessionKey = typeof data.sessionKey === "string" ? data.sessionKey : undefined;
       const runId = typeof data.runId === "string" ? data.runId : undefined;
-      const turnId = typeof data.turnId === "string" ? data.turnId : undefined;
       if (!sessionKey || !runId) return;
       const phase = data.data?.phase;
       const toolCallId =
         typeof data.data?.toolCallId === "string" ? data.data.toolCallId : undefined;
       const toolName = typeof data.data?.name === "string" ? data.data.name : undefined;
-      const toolKey = resolveGroupKey(sessionKey, runId, turnId);
+      const toolKey = resolveGroupKey(sessionKey, runId);
       const toolCallKey = toolCallId ? `${toolKey}:${toolCallId}` : undefined;
       const durationMs =
         phase === "result" && toolCallKey && toolStartTimes[toolCallKey] != null
@@ -778,7 +863,12 @@ function HomeContent() {
   );
 
   const sendChatPayload = useCallback(
-    async (params: { sessionKey: string; message: string; attachments?: File[] }) => {
+    async (params: {
+      sessionKey: string;
+      message: string;
+      attachments?: File[];
+      runId?: string;
+    }) => {
       const client = useConnectionStore.getState().wsClient;
       if (!client) {
         return { ok: false, error: "尚未连接到网关" };
@@ -794,16 +884,18 @@ function HomeContent() {
               })),
             )
           : undefined;
+      // Use provided runId or generate a new one
       const idempotencyKey =
-        typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `run-${Date.now()}`;
+        params.runId ??
+        (typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `run-${Date.now()}`);
       try {
-        await client.sendRequest("chat.send", {
+        const response = await client.sendRequest<{ runId?: string }>("chat.send", {
           sessionKey: params.sessionKey,
           message: params.message,
           idempotencyKey,
           attachments: normalizedAttachments,
         });
-        return { ok: true };
+        return { ok: true, runId: response?.runId ?? idempotencyKey };
       } catch (error) {
         return {
           ok: false,
@@ -874,7 +966,6 @@ function HomeContent() {
 
   const handleSelectAssistant = (prompt: string) => {
     setActiveMainView("chat");
-    console.log("选择示例:", prompt);
     setDraftMessage(prompt);
     setDraftAttachments([]);
     setHighlightDraft(true);
@@ -891,9 +982,6 @@ function HomeContent() {
   };
 
   const handleSendMessage = async (message: string, attachments?: File[]) => {
-    console.log("发送消息:", message);
-    console.log("附件:", attachments);
-
     if (isStreaming) {
       stopStreaming();
     }
@@ -914,33 +1002,6 @@ function HomeContent() {
     const selectedConnectors = sessionKey
       ? (sessionConnectorIds[sessionKey] ?? [])
       : draftConnectorIds;
-    if (!sessionKey) {
-      setIsCreatingSession(true);
-      const label = deriveSessionLabel(message);
-      sessionKey = await createSession(label);
-      setIsCreatingSession(false);
-      if (!sessionKey) {
-        addToast({
-          title: "新建会话失败",
-          description: "请确认网关连接后重试。",
-          variant: "error",
-        });
-        return { ok: false, error: "新建会话失败" };
-      }
-      const createdSessionKey = sessionKey;
-      if (!createdSessionKey) {
-        return { ok: false, error: "新建会话失败" };
-      }
-      setCurrentConversationId(createdSessionKey);
-      setConversationMessages((prev) => ({
-        ...prev,
-        [createdSessionKey]: prev[createdSessionKey] ?? [],
-      }));
-      if (selectedConnectors.length > 0) {
-        await saveSessionConnectors(createdSessionKey, selectedConnectors);
-        setDraftConnectorIds([]);
-      }
-    }
 
     // 创建新的用户消息
     const messageId = `msg-${Date.now()}`;
@@ -953,18 +1014,91 @@ function HomeContent() {
       retryPayload: { message, attachments },
     };
 
-    // 更新对话消息列表
-    setConversationMessages((prev) => ({
-      ...prev,
-      [sessionKey]: [...(prev[sessionKey] || []), newUserMessage],
-    }));
+    if (!sessionKey) {
+      // 先显示用户消息（使用临时会话 key）
+      const tempSessionKey = `temp-${Date.now()}`;
+      setCurrentConversationId(tempSessionKey);
+      setConversationMessages((prev) => ({
+        ...prev,
+        [tempSessionKey]: [newUserMessage],
+      }));
+
+      // 然后创建真实会话
+      setIsCreatingSession(true);
+      const label = deriveSessionLabel(message);
+      sessionKey = await createSession(label);
+      setIsCreatingSession(false);
+
+      if (!sessionKey) {
+        addToast({
+          title: "新建会话失败",
+          description: "请确认网关连接后重试。",
+          variant: "error",
+        });
+        return { ok: false, error: "新建会话失败" };
+      }
+
+      // 更新为真实会话 key
+      setCurrentConversationId(sessionKey);
+      setConversationMessages((prev) => {
+        const messages = { ...prev };
+        // 将临时会话的消息转移到真实会话
+        messages[sessionKey!] = messages[tempSessionKey] || [];
+        delete messages[tempSessionKey];
+        return messages;
+      });
+
+      if (selectedConnectors.length > 0) {
+        await saveSessionConnectors(sessionKey, selectedConnectors);
+        setDraftConnectorIds([]);
+      }
+    } else {
+      // 更新对话消息列表
+      setConversationMessages((prev) => ({
+        ...prev,
+        [sessionKey!]: [...(prev[sessionKey!] || []), newUserMessage],
+      }));
+    }
+
+    // 生成 runId 用于创建 AI 消息占位符
+    const runId =
+      typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `run-${Date.now()}`;
+    const assistantMessageId = `assistant-${sessionKey!}:${runId}`;
+
+    // 上传附件到 PageIndex（如果支持）
+    if (attachments && attachments.length > 0 && sessionKey) {
+      const { uploadDocument } = useSessionDocumentStore.getState();
+      for (const file of attachments) {
+        if (isPageIndexSupported(file.name)) {
+          // 后台上传，不阻塞消息发送
+          uploadDocument(sessionKey, file).catch((err) => {
+            console.error("Failed to upload to PageIndex:", err);
+          });
+        }
+      }
+    }
 
     const result = await sendChatPayload({
       sessionKey,
       message,
       attachments,
+      runId,
     });
     if (result.ok) {
+      // 使用网关返回的 runId 创建 AI 消息占位符
+      const actualRunId = result.runId ?? runId;
+      const assistantMessageId = `assistant-${sessionKey!}:${actualRunId}`;
+      const assistantMessage: Message = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        status: "waiting",
+      };
+      setConversationMessages((prev) => ({
+        ...prev,
+        [sessionKey!]: [...(prev[sessionKey!] || []), assistantMessage],
+      }));
       updateMessageById(sessionKey, messageId, (msg) => ({
         ...msg,
         status: undefined,
@@ -1026,7 +1160,6 @@ function HomeContent() {
   // TopBar actions
 
   const handleShare = () => {
-    console.log("分享对话");
     addToast({
       title: "分享功能开发中",
       description: "该功能正在开发中,敬请期待",
@@ -1034,7 +1167,6 @@ function HomeContent() {
   };
 
   const handleExport = () => {
-    console.log("导出对话");
     addToast({
       title: "导出功能开发中",
       description: "该功能正在开发中,敬请期待",
@@ -1187,6 +1319,42 @@ function HomeContent() {
     });
   };
 
+  // 开始编辑用户消息
+  const handleStartEdit = (message: Message) => {
+    if (message.role !== "user") return;
+    setEditingMessageId(message.id);
+  };
+
+  // 确认编辑并发送
+  const handleConfirmEdit = async (message: Message, newContent: string) => {
+    if (!newContent.trim() || !currentConversationId) return;
+    setEditingMessageId(null);
+    // 删除原消息
+    setConversationMessages((prev) => {
+      const messages = prev[currentConversationId] ? [...prev[currentConversationId]!] : [];
+      const next = messages.filter((msg) => msg.id !== message.id);
+      return { ...prev, [currentConversationId]: next };
+    });
+    // 使用新内容发送
+    await handleSendMessage(newContent);
+  };
+
+  // 取消编辑
+  const handleCancelEdit = (message: Message) => {
+    setEditingMessageId(null);
+    setDraftMessage("");
+  };
+
+  // 复制消息内容
+  const handleCopyContent = (content: string) => {
+    navigator.clipboard.writeText(content);
+    addToast({
+      title: "复制成功",
+      description: "内容已复制到剪贴板",
+      variant: "success",
+    });
+  };
+
   // 获取当前对话的消息
   const currentMessages = currentConversationId
     ? conversationMessages[currentConversationId] || []
@@ -1194,13 +1362,6 @@ function HomeContent() {
   const currentHistoryError = currentConversationId
     ? historyErrors[currentConversationId]
     : undefined;
-  const currentHistoryLimit = currentConversationId
-    ? (historyLimits[currentConversationId] ?? historyDefaultLimit)
-    : historyDefaultLimit;
-  const canLoadMore =
-    !!currentConversationId &&
-    currentMessages.length >= currentHistoryLimit &&
-    currentHistoryLimit < historyMaxLimit;
 
   const showWelcomePage =
     !currentConversationId ||
@@ -1244,9 +1405,19 @@ function HomeContent() {
           setDialogSessionKey(key);
           setActiveDialog("rename");
         }}
-        onOpenKnowledge={() => setActiveMainView("knowledge")}
-        showTopBar
-        activeMainView={activeMainView}
+        onOpenKnowledge={() => {
+          setCurrentConversationId(null);
+          setActiveMainView("knowledge");
+        }}
+        onOpenPersonaSettings={() => {
+          setCurrentConversationId(null);
+          setActiveMainView("persona");
+        }}
+        assistantVisible={activeMainView !== "persona" && assistantVisible}
+        onToggleAssistantVisible={() => setAssistantVisible(!assistantVisible)}
+        showTopBar={activeMainView !== "persona"}
+        showSidebar={activeMainView !== "persona"}
+        activeView={activeMainView}
         onDeleteSession={(key) => {
           setDialogSessionKey(key);
           setActiveDialog("delete");
@@ -1260,7 +1431,12 @@ function HomeContent() {
         <div className="h-full flex flex-col">
           {/* 主内容区域 */}
           <div className="flex-1 overflow-hidden flex flex-col">
-            {activeMainView === "knowledge" ? (
+            {activeMainView === "persona" ? (
+              <div className="flex-1 overflow-hidden">
+                {/* VRM 全屏显示 */}
+                <VirtualAssistantPage onClose={() => setActiveMainView("chat")} />
+              </div>
+            ) : activeMainView === "knowledge" ? (
               <div className="flex-1 overflow-hidden bg-background-tertiary">
                 <KnowledgeBasePage />
               </div>
@@ -1272,6 +1448,7 @@ function HomeContent() {
                   <MessageList
                     messages={currentMessages}
                     isLoading={historyLoadingKey === currentConversationId}
+                    autoScrollToBottom={!(historyLoadingKey === currentConversationId)}
                     emptyState={{
                       title: currentHistoryError ? "历史记录加载失败" : "暂无消息",
                       description: currentHistoryError
@@ -1285,22 +1462,15 @@ function HomeContent() {
                             }
                           : undefined,
                     }}
-                    loadMore={{
-                      hasMore: canLoadMore,
-                      isLoading: historyLoadingKey === currentConversationId,
-                      onLoadMore: () => {
-                        if (!currentConversationId) return;
-                        const nextLimit = Math.min(
-                          historyMaxLimit,
-                          currentHistoryLimit + historyDefaultLimit,
-                        );
-                        void fetchHistory(currentConversationId, true, nextLimit);
-                      },
-                    }}
                     onRetryMessage={handleRetryMessage}
                     onEditMessage={handleEditMessage}
                     onCopyMessage={handleCopyToDraft}
                     onDeleteMessage={handleDeleteFailedMessage}
+                    onStartEdit={handleStartEdit}
+                    onConfirmEdit={handleConfirmEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onCopy={handleCopyContent}
+                    editingMessageId={editingMessageId}
                     highlightMessageId={highlightMessageId}
                   />
 
@@ -1334,17 +1504,29 @@ function HomeContent() {
                 </div>
               </div>
             ) : (
-              // 欢迎页面 - 垂直居中包含输入框
-              <div className="flex-1 flex flex-col items-center justify-center px-2xl">
-                <div className="w-full max-w-[900px]">
-                  <div className="text-center">
-                    <h1 className="text-4xl font-bold text-text-primary mb-md">企业运营助手</h1>
-                    <p className="text-sm text-text-tertiary mb-2xl">
+              // 欢迎页面 - 标题和输入框居中，快捷方式在下方
+              <div className="flex-1 flex flex-col items-center px-2xl overflow-hidden">
+                <div className="w-full max-w-[900px] flex flex-col items-center flex-1 overflow-hidden">
+                  {/* 标题 - 居中 */}
+                  <div className="text-center flex-shrink-0 mt-xl">
+                    <h1 className="text-4xl font-bold text-text-primary mb-sm flex items-center justify-center gap-md">
+                      <span className="inline-block bg-transparent">
+                        <img
+                          src="/img/logo.png"
+                          alt="Hovi"
+                          className="w-10 h-10 object-contain"
+                          style={{ backgroundColor: "transparent" }}
+                        />
+                      </span>
+                      <span>Hovi</span>
+                    </h1>
+                    <p className="text-sm text-text-tertiary">
                       选择一个模板快速开始，或直接输入您的需求
                     </p>
                   </div>
+
                   {/* 输入框 - 居中显示 */}
-                  <div className="mt-3xl">
+                  <div className="flex-shrink-0 w-full mt-lg">
                     {/* 触发按钮横条 - 在有文件时显示 */}
                     <ComputerPanelWrapper
                       files={generatedFiles}
@@ -1370,7 +1552,9 @@ function HomeContent() {
                       onToggleConnector={handleToggleConnector}
                     />
                   </div>
-                  <div className="mt-2xl">
+
+                  {/* 快捷方式 - 在输入框下方，可滚动 */}
+                  <div className="flex-1 overflow-y-auto w-full mt-lg pb-md px-md scrollbar-thin">
                     <WelcomePage
                       onSelectPrompt={handleSelectAssistant}
                       compact={true}
@@ -1434,6 +1618,11 @@ function HomeContent() {
                     {detailSession.lastMessagePreview}
                   </div>
                 )}
+                {/* 文档列表 */}
+                <div className="mt-4">
+                  <div className="text-sm font-medium mb-2">上传的文档</div>
+                  <SessionDocuments sessionKey={detailSession.key} />
+                </div>
               </div>
             ) : (
               <div className="text-sm text-text-tertiary">未找到会话数据。</div>
@@ -1527,8 +1716,14 @@ function HomeContent() {
         </Dialog>
       </MainLayout>
 
+      {/* Session 文档预览面板 */}
+      {currentConversationId && <SessionPreviewPanelWrapper sessionKey={currentConversationId} />}
+
       {/* 全局设置对话框 */}
       <SettingsDialog />
+
+      {/* 虚拟角色设置面板 */}
+      <SettingsPanel open={personaSettingsOpen} onOpenChange={setPersonaSettingsOpen} />
     </>
   );
 }

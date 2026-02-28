@@ -47,6 +47,7 @@ export class ClawdbotWebSocketClient {
   private requestIdCounter = 0;
   private reconnectAttempts = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
   private isConnecting = false;
   private isClosedManually = false;
   private connectNonce: string | null = null;
@@ -73,12 +74,10 @@ export class ClawdbotWebSocketClient {
    */
   async connect(): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      console.warn("[ClawdbotWS] Already connected");
       return;
     }
 
     if (this.isConnecting) {
-      console.warn("[ClawdbotWS] Connection already in progress");
       return;
     }
 
@@ -88,13 +87,12 @@ export class ClawdbotWebSocketClient {
 
     return new Promise((resolve, reject) => {
       try {
-        console.log(`[ClawdbotWS] Connecting to ${this.options.url}...`);
         this.ws = new WebSocket(this.options.url);
 
         this.ws.onopen = () => {
-          console.log("[ClawdbotWS] WebSocket opened");
           this.isConnecting = false;
           this.reconnectAttempts = 0;
+          this.startHeartbeat();
           // Wait for challenge before resolving
         };
 
@@ -103,13 +101,11 @@ export class ClawdbotWebSocketClient {
             const message = JSON.parse(event.data) as WSMessage;
             await this.handleMessage(message, resolve, reject);
           } catch (error) {
-            console.error("[ClawdbotWS] Failed to parse message:", error);
             this.options.onError(error as Error);
           }
         };
 
         this.ws.onerror = (event) => {
-          console.error("[ClawdbotWS] WebSocket error:", event);
           this.isConnecting = false;
           const error = new Error("WebSocket connection error");
           this.options.onError(error);
@@ -117,8 +113,8 @@ export class ClawdbotWebSocketClient {
         };
 
         this.ws.onclose = (event) => {
-          console.log(`[ClawdbotWS] WebSocket closed: ${event.code} ${event.reason}`);
           this.isConnecting = false;
+          this.stopHeartbeat();
           this.ws = null;
           this.options.onDisconnected();
 
@@ -157,7 +153,6 @@ export class ClawdbotWebSocketClient {
       // Handle connect.challenge
       if (event.event === "connect.challenge") {
         const payload = event.payload as ConnectChallengePayload;
-        console.log("[ClawdbotWS] Received challenge:", payload);
         this.connectNonce = payload.nonce;
         try {
           await this.sendConnectRequest();
@@ -175,7 +170,7 @@ export class ClawdbotWebSocketClient {
           try {
             handler(event.payload);
           } catch (error) {
-            console.error(`[ClawdbotWS] Error in event handler for ${event.event}:`, error);
+            // Error in event handler
           }
         });
       }
@@ -186,12 +181,10 @@ export class ClawdbotWebSocketClient {
       if (response.id.startsWith("connect-")) {
         if (response.ok) {
           const payload = response.payload as HelloPayload;
-          console.log("[ClawdbotWS] Connected successfully, protocol:", payload.protocol);
           this.options.onConnected();
           connectResolve?.();
         } else {
           const error = new Error(response.error?.message || "Connection failed");
-          console.error("[ClawdbotWS] Connection failed:", error);
           this.options.onError(error);
           connectReject?.(error);
         }
@@ -221,6 +214,7 @@ export class ClawdbotWebSocketClient {
         platform: "web",
         mode: "webchat", // Required: must be one of the predefined modes
       },
+      caps: ["tool-events"], // Request tool events capability
       role,
       scopes,
       locale: this.options.locale,
@@ -258,7 +252,6 @@ export class ClawdbotWebSocketClient {
       if (!this.options.token) {
         throw error;
       }
-      console.warn("[ClawdbotWS] Device identity unavailable, falling back to token auth.");
     }
 
     const request: WSRequest = {
@@ -268,7 +261,6 @@ export class ClawdbotWebSocketClient {
       params: params as unknown as Record<string, unknown>,
     };
 
-    console.log("[ClawdbotWS] Sending connect request:", JSON.stringify(params, null, 2));
     this.send(request);
   }
 
@@ -277,6 +269,7 @@ export class ClawdbotWebSocketClient {
    */
   disconnect(): void {
     this.isClosedManually = true;
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -289,30 +282,57 @@ export class ClawdbotWebSocketClient {
 
   /**
    * Schedule reconnection with exponential backoff
+   * - First 3 attempts: 10 seconds interval
+   * - After 3 failures: 60 seconds (1 minute) interval
    */
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-      console.error("[ClawdbotWS] Max reconnect attempts reached");
-      this.options.onError(new Error("Max reconnect attempts reached"));
-      return;
+      // Continue trying even after max attempts, just with longer interval
+      this.options.onError?.(new Error("Max reconnect attempts reached, will keep trying..."));
     }
 
-    // Exponential backoff: 1s, 2s, 4s, 8s, ..., max 30s
-    const delay = Math.min(
-      this.options.reconnectDelay * Math.pow(2, this.reconnectAttempts),
-      30000,
-    );
+    // First 3 attempts: 10 seconds, then switch to 60 seconds
+    const delay = this.reconnectAttempts < 3 ? 10000 : 60000;
 
-    console.log(
-      `[ClawdbotWS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})...`,
-    );
     this.reconnectAttempts++;
 
+    console.log(
+      `[WebSocket] Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts})...`,
+    );
+
     this.reconnectTimer = setTimeout(() => {
-      this.connect().catch((error) => {
-        console.error("[ClawdbotWS] Reconnect failed:", error);
+      this.connect().catch(() => {
+        // Reconnect failed, will schedule next attempt
       });
     }, delay);
+  }
+
+  /**
+   * Start heartbeat to keep connection alive
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    // Send heartbeat every 30 seconds
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Send a ping frame (browser WebSocket doesn't have built-in ping, so we use a JSON message)
+        try {
+          this.ws.send(JSON.stringify({ type: "ping" }));
+        } catch (error) {
+          console.warn("[ClawdbotWebSocket] Heartbeat failed:", error);
+        }
+      }
+    }, 30000);
+  }
+
+  /**
+   * Stop heartbeat
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   /**
@@ -358,13 +378,13 @@ export class ClawdbotWebSocketClient {
         reject(error);
       }
 
-      // Request timeout (60 seconds)
+      // Request timeout (30 seconds)
       setTimeout(() => {
         if (this.responseHandlers.has(id)) {
           this.responseHandlers.delete(id);
           reject(new Error(`Request ${method} timeout`));
         }
-      }, 60000);
+      }, 30000);
     });
   }
 

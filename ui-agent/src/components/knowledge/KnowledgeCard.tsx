@@ -16,7 +16,7 @@ export function KnowledgeCard({ document, onClick }: KnowledgeCardProps) {
     >
       <div className="text-sm font-medium truncate text-text-primary">{document.filename}</div>
       <div className="text-[11px] text-text-tertiary mt-1 truncate">
-        {document.tags?.length ? document.tags.join(" / ") : "无标签"}
+        {document.size ? `${(document.size / 1024).toFixed(1)} KB` : "未知大小"}
       </div>
       <div className="text-[10px] text-text-tertiary mt-2">
         {document.indexed ? "已索引" : "索引中"} · {(document.size / 1024).toFixed(1)} KB

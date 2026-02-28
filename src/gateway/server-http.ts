@@ -1,3 +1,5 @@
+import { createReadStream } from "node:fs";
+import fsPromises from "node:fs/promises";
 import {
   createServer as createHttpServer,
   type Server as HttpServer,
@@ -5,8 +7,10 @@ import {
   type ServerResponse,
 } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
+import path from "node:path";
 import type { TlsOptions } from "node:tls";
 import type { WebSocketServer } from "ws";
+import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import {
   A2UI_PATH,
@@ -55,6 +59,33 @@ import { handleKnowledgeHttpRequest } from "./knowledge-http.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import { GATEWAY_CLIENT_MODES, normalizeGatewayClientMode } from "./protocol/client-info.js";
+
+// MIME type mapping for common file types
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    ".vrm": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
+    ".glb": "model/gltf-binary",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".pdf": "application/pdf",
+    ".json": "application/json",
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".css": "text/css",
+    ".js": "application/javascript",
+  };
+  return mimeTypes[ext] || "application/octet-stream";
+}
 import type { GatewayWsClient } from "./server/ws-types.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
@@ -536,6 +567,66 @@ export function createGatewayHttpServer(opts: {
       ) {
         return;
       }
+
+      // Handle workspace file requests: /files/:agentId/:path*
+      if (requestPath.startsWith("/files/")) {
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "text/plain" });
+          res.end("Method Not Allowed");
+          return;
+        }
+        try {
+          // Parse /files/:agentId/:path*
+          const parts = requestPath.slice(1).split("/"); // Remove leading /
+          if (parts[0] === "files" && parts.length >= 3) {
+            const agentId = parts[1];
+            const filePath = parts.slice(2).join("/");
+            const cfg = loadConfig();
+            const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+            const fullPath = path.join(workspaceDir, filePath);
+
+            // Security check: ensure the resolved path is within workspace
+            const resolvedPath = path.resolve(fullPath);
+            const workspaceResolved = path.resolve(workspaceDir);
+            if (!resolvedPath.startsWith(workspaceResolved)) {
+              res.writeHead(403, { "Content-Type": "text/plain" });
+              res.end("Forbidden");
+              return;
+            }
+
+            const stat = await fsPromises.stat(fullPath);
+            const range = req.headers.range;
+            const contentType = getMimeType(filePath);
+
+            res.setHeader("Content-Type", contentType);
+            res.setHeader("Accept-Ranges", "bytes");
+
+            if (range) {
+              const [rangeStart, rangeEnd] = range.replace("bytes=", "").split("-");
+              const start = parseInt(rangeStart, 10) || 0;
+              const end = parseInt(rangeEnd, 10) || stat.size - 1;
+              const chunkSize = end - start + 1;
+              res.writeHead(206, {
+                "Content-Length": chunkSize,
+                "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+              });
+              const stream = createReadStream(fullPath, { start, end });
+              stream.pipe(res);
+            } else {
+              res.writeHead(200, { "Content-Length": stat.size });
+              const stream = createReadStream(fullPath);
+              stream.pipe(res);
+            }
+            return;
+          }
+        } catch (err) {
+          console.error("Workspace file serving error:", err);
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("File not found");
+          return;
+        }
+      }
+
       if (await handleSlackHttpRequest(req, res)) {
         return;
       }

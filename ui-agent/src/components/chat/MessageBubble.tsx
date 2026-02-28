@@ -1,8 +1,9 @@
 "use client";
 
-import { User, Bot, ChevronDown, ChevronUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { User, ChevronDown, ChevronUp, Copy, Pencil, Check, X } from "lucide-react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import { FormattedContent } from "@/components/agent/FormattedContent";
+import type { Message } from "@/components/chat/MessageList";
 import { FileList, FileItemProps } from "@/components/files/FileList";
 import { useStreamingReplay } from "@/contexts/StreamingReplayContext";
 
@@ -30,12 +31,17 @@ interface MessageBubbleProps {
     isError?: boolean;
     durationMs?: number;
   }>;
-  status?: "sending" | "failed";
+  status?: "sending" | "failed" | "waiting";
   isHighlighted?: boolean;
   onRetry?: () => void;
   onEditRetry?: () => void;
   onCopyRetry?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
+  onEditConfirm?: (newContent: string) => void;
+  onEditCancel?: () => void;
+  onCopy?: (content: string) => void;
+  isEditing?: boolean;
   messageIndex?: number; // Index of this message in the list
 }
 
@@ -53,11 +59,26 @@ export function MessageBubble({
   onEditRetry,
   onCopyRetry,
   onDelete,
+  onEdit,
+  onEditConfirm,
+  onEditCancel,
+  onCopy,
+  isEditing = false,
   messageIndex = 0,
 }: MessageBubbleProps) {
   const isUser = role === "user";
+  const isWaiting = status === "waiting";
   const { isStreaming, getDisplayedText, currentMessageIndex } = useStreamingReplay();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // 当进入编辑模式时，加载原内容
+  useEffect(() => {
+    if (isEditing) {
+      setEditContent(content);
+    }
+  }, [isEditing, content]);
 
   // Get displayed content (full for non-streaming or user messages, streamed for assistant during replay)
   const displayedContent =
@@ -104,14 +125,14 @@ export function MessageBubble({
       >
         {/* 头像 */}
         <div
-          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ${
             isUser ? "bg-primary" : "bg-background-secondary"
           }`}
         >
           {isUser ? (
             <User className="w-4 h-4 text-white" />
           ) : (
-            <Bot className="w-4 h-4 text-text-secondary" />
+            <img src="/img/logo.png" alt="Hovi" className="w-full h-full object-contain" />
           )}
         </div>
 
@@ -124,7 +145,20 @@ export function MessageBubble({
                 : "bg-surface text-text-primary rounded-tl-sm"
             }`}
           >
-            {isUser ? (
+            {isWaiting ? (
+              <div className="flex items-center gap-sm text-sm text-text-tertiary">
+                <span className="animate-pulse">...</span>
+              </div>
+            ) : isEditing && isUser ? (
+              <textarea
+                ref={editInputRef}
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full min-w-[300px] bg-transparent text-sm text-white resize-none outline-none scrollbar-thin scrollbar-thumb-white/30 scrollbar-track-transparent"
+                rows={Math.max(2, editContent.split("\n").length)}
+                autoFocus
+              />
+            ) : isUser ? (
               <p className="text-sm whitespace-pre-wrap leading-relaxed">{displayedContent}</p>
             ) : (
               <FormattedContent
@@ -201,12 +235,79 @@ export function MessageBubble({
             </div>
           )}
 
+          {/* 功能按钮 */}
+          <div
+            className={`flex items-center gap-xs text-xs ${isUser ? "justify-end" : "justify-end"}`}
+          >
+            {/* 助手消息：复制按钮 */}
+            {!isUser && !isWaiting && content && onCopy && (
+              <button
+                type="button"
+                onClick={() => onCopy?.(content)}
+                className="p-xs text-text-tertiary hover:text-text-primary rounded hover:bg-background-secondary cursor-pointer"
+                title="复制"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            )}
+            {/* 用户消息：复制按钮 */}
+            {isUser && !status && !isEditing && onCopy && (
+              <button
+                type="button"
+                onClick={() => onCopy?.(content)}
+                className="p-xs text-text-tertiary hover:text-text-primary rounded hover:bg-background-secondary cursor-pointer"
+                title="复制"
+              >
+                <Copy className="h-3 w-3" />
+              </button>
+            )}
+            {/* 用户消息：编辑按钮 */}
+            {isUser && !status && !isEditing && onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="p-xs text-text-tertiary hover:text-text-primary rounded hover:bg-background-secondary cursor-pointer"
+                title="编辑"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            )}
+            {/* 用户消息：编辑中显示取消和确认按钮 */}
+            {isUser && isEditing && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditContent(content);
+                    onEditCancel?.();
+                  }}
+                  className="p-xs text-text-tertiary hover:text-text-primary rounded hover:bg-background-secondary cursor-pointer"
+                  title="取消"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEditConfirm?.(editContent)}
+                  className="p-xs text-text-tertiary hover:text-text-primary rounded hover:bg-background-secondary cursor-pointer"
+                  title="确认发送"
+                >
+                  <Check className="h-3 w-3" />
+                </button>
+              </>
+            )}
+          </div>
+
           {/* 时间戳 */}
           {timestamp && (
             <span className={`text-xs text-text-tertiary ${isUser ? "text-right" : "text-left"}`}>
-              {timestamp.toLocaleTimeString("zh-CN", {
+              {timestamp.toLocaleString("zh-CN", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
                 hour: "2-digit",
                 minute: "2-digit",
+                second: "2-digit",
               })}
             </span>
           )}

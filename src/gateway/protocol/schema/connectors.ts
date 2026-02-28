@@ -36,6 +36,19 @@ const ConnectorOAuthSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ConnectorOAuthProviderConfigSchema = Type.Object(
+  {
+    authorizeUrl: Type.Optional(Type.String()),
+    tokenUrl: Type.Optional(Type.String()),
+    clientId: Type.Optional(Type.String()),
+    clientSecret: Type.Optional(Type.String()),
+    scopes: Type.Optional(Type.Array(Type.String())),
+    extraAuthorizeParams: Type.Optional(Type.Record(Type.String(), Type.String())),
+    extraTokenParams: Type.Optional(Type.Record(Type.String(), Type.String())),
+  },
+  { additionalProperties: false },
+);
+
 const ConnectorSummarySchema = Type.Object(
   {
     id: NonEmptyString,
@@ -47,6 +60,8 @@ const ConnectorSummarySchema = Type.Object(
     builtin: Type.Optional(Type.Boolean()),
     enabled: Type.Optional(Type.Boolean()),
     authMode: Type.Optional(ConnectorAuthModeSchema),
+    oauthProvider: Type.Optional(Type.String()),
+    oauthProviderConfig: Type.Optional(ConnectorOAuthProviderConfigSchema),
     oauth: Type.Optional(ConnectorOAuthSchema),
   },
   { additionalProperties: false },

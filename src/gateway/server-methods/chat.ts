@@ -10,6 +10,7 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
+import { checkQuota, getRemainingQuota } from "../../infra/token-quota.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -770,6 +771,19 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+
+    // Quota check - 检查用户配额
+    const userId = entry?.from; // 从 session entry 获取用户 ID
+    const estimatedCost = 1.0; // 预估费用
+    if (userId && !checkQuota(userId, estimatedCost, cfg)) {
+      const remaining = getRemainingQuota(userId, cfg);
+      respond(false, undefined, {
+        code: "QUOTA_EXCEEDED",
+        message: `额度不足。剩余: ¥${remaining?.toFixed(2) ?? "0"}`,
+      });
+      return;
+    }
+
     const sessionConnectorIds = Array.isArray(cfg.connectors?.sessions?.[sessionKey]?.connectorIds)
       ? (cfg.connectors?.sessions?.[sessionKey]?.connectorIds ?? []).filter(
           (id): id is string => typeof id === "string" && id.trim().length > 0,

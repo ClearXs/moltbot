@@ -201,7 +201,6 @@ export async function handleInlineActions(params: {
         agentDir,
         workspaceDir,
         config: cfg,
-        turnId: opts?.turnId,
       });
       const authorizedTools = applyOwnerOnlyToolPolicy(tools, command.senderIsOwner);
 
@@ -326,7 +325,6 @@ export async function handleInlineActions(params: {
       contextTokens,
       isGroup,
       skillCommands,
-      turnId: opts?.turnId,
     });
 
   if (inlineCommand) {

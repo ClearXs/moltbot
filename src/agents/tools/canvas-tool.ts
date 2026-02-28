@@ -102,7 +102,6 @@ export function createCanvasTool(options?: { config?: OpenClawConfig }): AnyAgen
           command,
           params: invokeParams,
           idempotencyKey: crypto.randomUUID(),
-          turnId: options?.turnId,
         });
 
       switch (action) {

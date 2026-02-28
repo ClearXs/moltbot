@@ -15,6 +15,15 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSettingsStore, type OpenClawConfigPartial } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 
@@ -29,7 +38,11 @@ function deepGet(obj: Record<string, unknown>, path: string): unknown {
   }, obj);
 }
 
-function deepSet(obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+function deepSet(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
   const keys = path.split(".");
   const result = structuredClone(obj);
   let current: Record<string, unknown> = result;
@@ -85,7 +98,7 @@ function FieldRow({
 /*  Main component                                                       */
 /* ------------------------------------------------------------------ */
 
-export function GeneralSettingsTab() {
+export function GeneralSettingsTab({ onClose }: { onClose?: () => void }) {
   const { config, isLoadingConfig, isSavingConfig, configError, loadConfig, patchConfig } =
     useSettingsStore();
   const { addToast } = useToastStore();
@@ -95,6 +108,10 @@ export function GeneralSettingsTab() {
   const [dirty, setDirty] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [availableModels, setAvailableModels] = useState<
+    Array<{ id: string; name: string; provider: string }>
+  >([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   // Sync remote config → local form when loaded
   useEffect(() => {
@@ -104,10 +121,36 @@ export function GeneralSettingsTab() {
     }
   }, [config]);
 
-  const getValue = useCallback(
-    (path: string): unknown => deepGet(form, path),
-    [form],
-  );
+  // Load available models from config
+  useEffect(() => {
+    const loadModels = () => {
+      if (!config) return;
+      const cfg = config as Record<string, unknown>;
+      const modelsProviders = (cfg.models as Record<string, unknown>)?.providers as
+        | Record<string, { models?: Array<{ id: string; name: string }> }>
+        | undefined;
+
+      if (modelsProviders) {
+        const models: Array<{ id: string; name: string; provider: string }> = [];
+        Object.entries(modelsProviders).forEach(([providerName, provider]) => {
+          if (provider?.models) {
+            provider.models.forEach((model) => {
+              models.push({
+                id: `${providerName}/${model.id}`,
+                name: model.name || model.id,
+                provider: providerName,
+              });
+            });
+          }
+        });
+        setAvailableModels(models);
+      }
+      setIsLoadingModels(false);
+    };
+    loadModels();
+  }, [config]);
+
+  const getValue = useCallback((path: string): unknown => deepGet(form, path), [form]);
 
   const setValue = useCallback((path: string, value: unknown) => {
     setForm((prev) => deepSet(prev, path, value));
@@ -148,6 +191,42 @@ export function GeneralSettingsTab() {
     return "";
   }, [getValue]);
 
+  /** Resolve agents.defaults.model to fallback strings */
+  const modelFallbacks = useCallback(() => {
+    const m = getValue("agents.defaults.model");
+    if (m && typeof m === "object" && "fallbacks" in (m as Record<string, unknown>)) {
+      const fallbacks = (m as Record<string, unknown>).fallbacks;
+      if (Array.isArray(fallbacks)) {
+        return fallbacks.filter((f): f is string => typeof f === "string");
+      }
+    }
+    return [] as string[];
+  }, [getValue]);
+
+  const handleFallbackChange = useCallback(
+    (index: number, value: string) => {
+      const current = modelFallbacks();
+      const updated = [...current];
+      updated[index] = value;
+      setValue("agents.defaults.model", { primary: modelPrimary(), fallbacks: updated });
+    },
+    [modelFallbacks, modelPrimary, setValue],
+  );
+
+  const handleAddFallback = useCallback(() => {
+    const current = modelFallbacks();
+    setValue("agents.defaults.model", { primary: modelPrimary(), fallbacks: [...current, ""] });
+  }, [modelFallbacks, modelPrimary, setValue]);
+
+  const handleRemoveFallback = useCallback(
+    (index: number) => {
+      const current = modelFallbacks();
+      const updated = current.filter((_, i) => i !== index);
+      setValue("agents.defaults.model", { primary: modelPrimary(), fallbacks: updated });
+    },
+    [modelFallbacks, modelPrimary, setValue],
+  );
+
   const handleSave = async () => {
     // Build patch from local form diff
     const patch = buildPatch(form, config as Record<string, unknown> | null);
@@ -159,10 +238,22 @@ export function GeneralSettingsTab() {
     const result = await patchConfig(patch);
     if (result.ok) {
       setDirty(false);
-      addToast({
-        title: "配置已保存",
-        description: result.needsRestart ? "部分更改需要重启网关才能生效" : "设置已成功更新",
-      });
+      if (result.needsRestart) {
+        // Gateway needs to restart - show message and close settings
+        addToast({
+          title: "配置已保存，网关即将重启",
+          description: "设置页面将关闭，请稍候重新打开",
+        });
+        // Close settings after a short delay to let the user see the message
+        setTimeout(() => {
+          onClose?.();
+        }, 1500);
+      } else {
+        addToast({
+          title: "配置已保存",
+          description: "设置已成功更新",
+        });
+      }
     } else {
       addToast({
         title: "保存失败",
@@ -214,6 +305,38 @@ export function GeneralSettingsTab() {
 
   return (
     <div className="space-y-0">
+      {/* ---- 顶部操作栏 ---- */}
+      <div className="flex items-center justify-between mb-4 pb-4 border-b border-border-light">
+        <div>
+          {configError && (
+            <p className="text-xs text-error flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {configError}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReset}
+            disabled={!dirty || isSavingConfig}
+          >
+            重置
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
+            {isSavingConfig ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                保存中...
+              </>
+            ) : (
+              "保存设置"
+            )}
+          </Button>
+        </div>
+      </div>
+
       {/* ---- UI 自定义 ---- */}
       <section>
         <SectionHeader icon={<Palette className="w-4 h-4" />} title="界面个性化" />
@@ -261,14 +384,18 @@ export function GeneralSettingsTab() {
         <SectionHeader icon={<Lock className="w-4 h-4" />} title="网关认证" />
 
         <FieldRow label="认证模式">
-          <select
+          <Select
             value={stringVal("gateway.auth.mode") || "token"}
-            onChange={(e) => setValue("gateway.auth.mode", e.target.value)}
-            className="h-8 w-full rounded-md border border-border-light bg-background px-2 text-xs"
+            onValueChange={(value) => setValue("gateway.auth.mode", value)}
           >
-            <option value="token">Token 认证</option>
-            <option value="password">密码认证</option>
-          </select>
+            <SelectTrigger className="h-8 w-full border-border-light">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="token">Token 认证</SelectItem>
+              <SelectItem value="password">密码认证</SelectItem>
+            </SelectContent>
+          </Select>
         </FieldRow>
 
         <FieldRow label="Gateway Token" description="用于 CLI 和 API 认证的共享 Token">
@@ -339,12 +466,110 @@ export function GeneralSettingsTab() {
         <SectionHeader icon={<Bot className="w-4 h-4" />} title="Agent 默认配置" />
 
         <FieldRow label="默认模型" description="Agent 使用的主要 LLM 模型">
-          <Input
-            value={modelPrimary()}
-            onChange={(e) => setValue("agents.defaults.model", { primary: e.target.value })}
-            placeholder="anthropic/claude-sonnet-4"
-            className="h-8 text-xs"
-          />
+          {isLoadingModels ? (
+            <div className="h-8 flex items-center text-xs text-text-tertiary">
+              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+              加载模型中...
+            </div>
+          ) : availableModels.length > 0 ? (
+            <Select
+              value={modelPrimary()}
+              onValueChange={(value) => setValue("agents.defaults.model", { primary: value })}
+            >
+              <SelectTrigger className="h-8 w-full border-border-light">
+                <SelectValue placeholder="选择模型..." />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(
+                  availableModels.reduce<Record<string, typeof availableModels>>((acc, model) => {
+                    const provider = model.provider;
+                    if (!acc[provider]) acc[provider] = [];
+                    acc[provider].push(model);
+                    return acc;
+                  }, {}),
+                ).map(([provider, models]) => (
+                  <SelectGroup key={provider}>
+                    <SelectLabel className="px-2 py-1 text-[10px] text-text-tertiary uppercase">
+                      {provider}
+                    </SelectLabel>
+                    {models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={modelPrimary()}
+              onChange={(e) => setValue("agents.defaults.model", { primary: e.target.value })}
+              placeholder="输入模型名称，如 anthropic/claude-sonnet-4"
+              className="h-8 text-xs"
+            />
+          )}
+        </FieldRow>
+
+        {/* 备用模型 */}
+        <FieldRow label="备用模型" description="主模型失败时使用的备用模型">
+          <div className="space-y-2 w-full">
+            {modelFallbacks().map((fallback, index) => (
+              <div key={index} className="flex items-center gap-2">
+                {availableModels.length > 0 ? (
+                  <Select
+                    value={fallback}
+                    onValueChange={(value) => handleFallbackChange(index, value)}
+                  >
+                    <SelectTrigger className="h-8 flex-1 border-border-light">
+                      <SelectValue placeholder="选择备用模型..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(
+                        availableModels
+                          .filter((m) => m.id !== modelPrimary())
+                          .reduce<Record<string, typeof availableModels>>((acc, model) => {
+                            const provider = model.provider;
+                            if (!acc[provider]) acc[provider] = [];
+                            acc[provider].push(model);
+                            return acc;
+                          }, {}),
+                      ).map(([provider, models]) => (
+                        <SelectGroup key={provider}>
+                          <SelectLabel className="px-2 py-1 text-[10px] text-text-tertiary uppercase">
+                            {provider}
+                          </SelectLabel>
+                          {models.map((model) => (
+                            <SelectItem key={model.id} value={model.id}>
+                              {model.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={fallback}
+                    onChange={(e) => handleFallbackChange(index, e.target.value)}
+                    placeholder="输入备用模型名称"
+                    className="h-8 flex-1 text-xs"
+                  />
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 text-text-tertiary hover:text-error"
+                  onClick={() => handleRemoveFallback(index)}
+                >
+                  <span className="text-xs">×</span>
+                </Button>
+              </div>
+            ))}
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleAddFallback}>
+              + 添加备用模型
+            </Button>
+          </div>
         </FieldRow>
 
         <FieldRow label="最大并发会话数" description="同时运行的最大会话数量">
@@ -353,22 +578,31 @@ export function GeneralSettingsTab() {
             min={1}
             max={100}
             value={numberVal("agents.defaults.maxConcurrent") ?? ""}
-            onChange={(e) => setValue("agents.defaults.maxConcurrent", e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) =>
+              setValue(
+                "agents.defaults.maxConcurrent",
+                e.target.value ? Number(e.target.value) : undefined,
+              )
+            }
             placeholder="10"
             className="h-8 text-xs"
           />
         </FieldRow>
 
         <FieldRow label="人类延迟模式" description="模拟人类打字延迟">
-          <select
+          <Select
             value={stringVal("agents.defaults.humanDelay.mode") || "off"}
-            onChange={(e) => setValue("agents.defaults.humanDelay.mode", e.target.value)}
-            className="h-8 w-full rounded-md border border-border-light bg-background px-2 text-xs"
+            onValueChange={(value) => setValue("agents.defaults.humanDelay.mode", value)}
           >
-            <option value="off">关闭</option>
-            <option value="natural">自然延迟</option>
-            <option value="custom">自定义</option>
-          </select>
+            <SelectTrigger className="h-8 w-full border-border-light">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">关闭</SelectItem>
+              <SelectItem value="natural">自然延迟</SelectItem>
+              <SelectItem value="custom">自定义</SelectItem>
+            </SelectContent>
+          </Select>
         </FieldRow>
 
         {stringVal("agents.defaults.humanDelay.mode") === "custom" && (
@@ -378,7 +612,12 @@ export function GeneralSettingsTab() {
                 type="number"
                 min={0}
                 value={numberVal("agents.defaults.humanDelay.minMs") ?? ""}
-                onChange={(e) => setValue("agents.defaults.humanDelay.minMs", e.target.value ? Number(e.target.value) : undefined)}
+                onChange={(e) =>
+                  setValue(
+                    "agents.defaults.humanDelay.minMs",
+                    e.target.value ? Number(e.target.value) : undefined,
+                  )
+                }
                 placeholder="800"
                 className="h-8 text-xs"
               />
@@ -388,7 +627,12 @@ export function GeneralSettingsTab() {
                 type="number"
                 min={0}
                 value={numberVal("agents.defaults.humanDelay.maxMs") ?? ""}
-                onChange={(e) => setValue("agents.defaults.humanDelay.maxMs", e.target.value ? Number(e.target.value) : undefined)}
+                onChange={(e) =>
+                  setValue(
+                    "agents.defaults.humanDelay.maxMs",
+                    e.target.value ? Number(e.target.value) : undefined,
+                  )
+                }
                 placeholder="2500"
                 className="h-8 text-xs"
               />
@@ -445,32 +689,6 @@ export function GeneralSettingsTab() {
           </label>
         </FieldRow>
       </section>
-
-      {/* ---- 底部操作栏 ---- */}
-      <div className="sticky bottom-0 bg-background pt-4 pb-2 border-t border-border-light mt-6 flex items-center justify-between">
-        {configError && (
-          <p className="text-xs text-error flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5" />
-            {configError}
-          </p>
-        )}
-        <div className="flex-1" />
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleReset} disabled={!dirty || isSavingConfig}>
-            重置
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
-            {isSavingConfig ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                保存中...
-              </>
-            ) : (
-              "保存设置"
-            )}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

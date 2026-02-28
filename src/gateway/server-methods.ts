@@ -18,10 +18,13 @@ import { cronHandlers } from "./server-methods/cron.js";
 import { deviceHandlers } from "./server-methods/devices.js";
 import { execApprovalsHandlers } from "./server-methods/exec-approvals.js";
 import { healthHandlers } from "./server-methods/health.js";
+import { knowledgeHandlers } from "./server-methods/knowledge.js";
 import { logsHandlers } from "./server-methods/logs.js";
 import { modelsHandlers } from "./server-methods/models.js";
 import { nodeHandlers } from "./server-methods/nodes.js";
+import { pageIndexHandlers } from "./server-methods/pageindex.js";
 import { pushHandlers } from "./server-methods/push.js";
+import { quotaHandlers } from "./server-methods/quota.js";
 import { sceneHandlers } from "./server-methods/scene.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
@@ -93,10 +96,13 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...pushHandlers,
   ...sendHandlers,
   ...usageHandlers,
+  ...quotaHandlers,
   ...agentHandlers,
   ...agentsHandlers,
   ...browserHandlers,
   ...sceneHandlers,
+  ...knowledgeHandlers,
+  ...pageIndexHandlers,
 };
 
 export async function handleGatewayRequest(

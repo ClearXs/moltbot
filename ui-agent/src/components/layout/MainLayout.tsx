@@ -1,10 +1,18 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ReactNode, useState } from "react";
 import type { GatewaySessionRow } from "@/types/clawdbot";
 import Sidebar from "../sidebar/Sidebar";
 import { ToastStack } from "../ui/toast-stack";
+import { TooltipProvider } from "../ui/tooltip";
 import { TopBar } from "./TopBar";
+
+// Dynamic import for VirtualAssistant (SSR disabled)
+const VirtualAssistant = dynamic(
+  () => import("@/components/desk-pet/VirtualAssistant").then((mod) => mod.VirtualAssistant),
+  { ssr: false },
+);
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -39,8 +47,12 @@ interface MainLayoutProps {
   onDelete?: () => void;
   onRename?: () => void;
   showTopBar?: boolean;
+  showSidebar?: boolean;
   onOpenKnowledge?: () => void;
-  activeMainView?: "chat" | "knowledge";
+  onOpenPersonaSettings?: () => void;
+  assistantVisible?: boolean;
+  onToggleAssistantVisible?: () => void;
+  activeView?: "chat" | "knowledge" | "persona";
 }
 
 const MainLayout = ({
@@ -76,8 +88,12 @@ const MainLayout = ({
   onDelete = () => {},
   onRename = () => {},
   showTopBar = true,
+  showSidebar = true,
   onOpenKnowledge = () => {},
-  activeMainView = "chat",
+  onOpenPersonaSettings = () => {},
+  assistantVisible = true,
+  onToggleAssistantVisible = () => {},
+  activeView = "chat",
 }: MainLayoutProps) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -85,49 +101,59 @@ const MainLayout = ({
     <div className="flex h-screen bg-background">
       <ToastStack />
       {/* Sidebar with integrated branding */}
-      <Sidebar
-        sessions={sessions}
-        unreadMap={unreadMap}
-        currentSessionKey={currentSessionKey}
-        isLoading={isLoading}
-        onSelectSession={onSelectSession}
-        onNewSession={onNewSession}
-        onRenameSession={onRenameSession}
-        onDeleteSession={onDeleteSession}
-        onViewSession={onViewSession}
-        searchQuery={searchQuery}
-        filterKind={filterKind}
-        onSearchChange={onSearchChange}
-        onFilterChange={onFilterChange}
-        unreadOnly={unreadOnly}
-        onUnreadToggle={onUnreadToggle}
-        sortMode={sortMode}
-        onSortChange={onSortChange}
-        selectionMode={selectionMode}
-        selectedKeys={selectedKeys}
-        onToggleSelectionMode={onToggleSelectionMode}
-        onToggleSelectedKey={onToggleSelectedKey}
-        onSelectAllKeys={onSelectAllKeys}
-        onClearSelection={onClearSelection}
-        onBatchDelete={onBatchDelete}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-        onOpenKnowledge={onOpenKnowledge}
-        activeMainView={activeMainView}
-      />
+      {showSidebar && (
+        <TooltipProvider>
+          <Sidebar
+            sessions={sessions}
+            unreadMap={unreadMap}
+            currentSessionKey={currentSessionKey}
+            isLoading={isLoading}
+            onSelectSession={onSelectSession}
+            onNewSession={onNewSession}
+            onRenameSession={onRenameSession}
+            onDeleteSession={onDeleteSession}
+            onViewSession={onViewSession}
+            searchQuery={searchQuery}
+            filterKind={filterKind}
+            onSearchChange={onSearchChange}
+            onFilterChange={onFilterChange}
+            unreadOnly={unreadOnly}
+            onUnreadToggle={onUnreadToggle}
+            sortMode={sortMode}
+            onSortChange={onSortChange}
+            selectionMode={selectionMode}
+            selectedKeys={selectedKeys}
+            onToggleSelectionMode={onToggleSelectionMode}
+            onToggleSelectedKey={onToggleSelectedKey}
+            onSelectAllKeys={onSelectAllKeys}
+            onClearSelection={onClearSelection}
+            onBatchDelete={onBatchDelete}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onOpenKnowledge={onOpenKnowledge}
+            onOpenPersonaSettings={onOpenPersonaSettings}
+            assistantVisible={assistantVisible}
+            onToggleAssistantVisible={onToggleAssistantVisible}
+            activeView={activeView}
+          />
+        </TooltipProvider>
+      )}
+
+      {/* 虚拟助手 - 全局显示 */}
+      {assistantVisible && <VirtualAssistant onOpenSettings={onOpenPersonaSettings} />}
 
       {/* Main content - full height */}
       <main className="flex-1 flex flex-col overflow-hidden bg-background-tertiary">
         {/* TopBar - context aware */}
         {showTopBar && (
           <TopBar
-            mode={currentSessionKey ? "chat" : "welcome"}
-            conversationTitle={conversationTitle}
+            mode={activeView === "chat" && currentSessionKey ? "chat" : "welcome"}
+            conversationTitle={activeView === "chat" ? conversationTitle : undefined}
             userName={userName}
-            onShare={onShare}
-            onExport={onExport}
-            onDelete={onDelete}
-            onRename={onRename}
+            onShare={activeView === "chat" ? onShare : undefined}
+            onExport={activeView === "chat" ? onExport : undefined}
+            onDelete={activeView === "chat" ? onDelete : undefined}
+            onRename={activeView === "chat" ? onRename : undefined}
           />
         )}
 

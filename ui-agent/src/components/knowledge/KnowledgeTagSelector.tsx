@@ -8,6 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { KnowledgeBaseTag } from "@/services/knowledgeApi";
 
+// Preset tag colors
+const PRESET_TAG_COLORS = [
+  "#64748b", // slate
+  "#ef4444", // red
+  "#f97316", // orange
+  "#eab308", // yellow
+  "#22c55e", // green
+  "#14b8a6", // teal
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+];
+
 type KnowledgeTagSelectorProps = {
   selectedTagNames: string[];
   availableTags: KnowledgeBaseTag[];
@@ -57,7 +70,7 @@ export function KnowledgeTagSelector({
             return (
               <span
                 key={name}
-                className="inline-flex items-center gap-1 rounded-full border border-border-light bg-white px-2 py-0.5 text-xs"
+                className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs"
               >
                 <span
                   className="inline-block h-2 w-2 rounded-full"
@@ -133,7 +146,7 @@ export function KnowledgeTagSelector({
                   className="w-full justify-start"
                   disabled={Boolean(isUpdatingTags)}
                   onClick={async () => {
-                    await onCreateTag({ name: queryName });
+                    await onCreateTag({ name: queryName, color: newTagColor });
                     onChange(Array.from(new Set([...selectedTagNames, queryName])));
                     setQuery("");
                   }}
@@ -163,7 +176,7 @@ export function KnowledgeTagSelector({
       </div>
 
       <Dialog open={manageOpen} onOpenChange={setManageOpen}>
-        <DialogContent className="w-[42rem] max-w-[92vw] p-6">
+        <DialogContent className="w-[42rem] max-w-[92vw] p-6 border-0">
           <DialogHeader>
             <DialogTitle>管理标签</DialogTitle>
           </DialogHeader>
@@ -173,13 +186,24 @@ export function KnowledgeTagSelector({
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="新标签名称"
+                className="flex-1"
               />
-              <input
-                className="h-9 w-14 rounded border border-border-light bg-white px-1"
-                type="color"
-                value={newTagColor}
-                onChange={(e) => setNewTagColor(e.target.value)}
-              />
+              <div className="flex items-center gap-1">
+                {PRESET_TAG_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`h-7 w-7 rounded-full border-2 transition-all ${
+                      newTagColor === color
+                        ? "border-text-primary scale-110"
+                        : "border-transparent hover:scale-110"
+                    }`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setNewTagColor(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
               <Button
                 size="sm"
                 type="button"
@@ -201,7 +225,7 @@ export function KnowledgeTagSelector({
                 return (
                   <div
                     key={tag.tagId}
-                    className="flex items-center justify-between rounded-md border border-border-light px-sm py-xs"
+                    className="flex items-center justify-between rounded-md px-sm py-xs"
                   >
                     <div className="inline-flex items-center gap-2 text-sm">
                       <Tag className="h-3.5 w-3.5 text-text-tertiary" />

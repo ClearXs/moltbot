@@ -26,7 +26,6 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
   const [editOpen, setEditOpen] = useState(false);
   const [editFilename, setEditFilename] = useState("");
   const [editDescription, setEditDescription] = useState("");
-  const [editTags, setEditTags] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const selectDocument = useKnowledgeBaseStore((state) => state.selectDocument);
@@ -74,14 +73,6 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
                 placeholder="可选"
               />
             </div>
-            <div>
-              <div className="mb-xs text-xs text-text-tertiary">标签（逗号分隔）</div>
-              <Input
-                value={editTags}
-                onChange={(e) => setEditTags(e.target.value)}
-                placeholder="例如: hr, policy"
-              />
-            </div>
             {editError ? <div className="text-xs text-error">{editError}</div> : null}
             <div className="flex justify-end gap-sm">
               <Button
@@ -104,10 +95,6 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
                       documentId: currentDocument.id,
                       filename: editFilename.trim(),
                       description: editDescription,
-                      tags: editTags
-                        .split(",")
-                        .map((item) => item.trim())
-                        .filter(Boolean),
                     });
                     setEditOpen(false);
                   } catch (error) {
@@ -148,7 +135,7 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
               </div>
             </div>
           </div>
-          {isDocumentDetail ? (
+          {isDocumentDetail && (
             <button
               type="button"
               className="mt-0.5 text-text-tertiary transition-colors hover:text-text-primary"
@@ -157,14 +144,13 @@ export function KnowledgeDetail({ activeDocumentId, onBack }: KnowledgeDetailPro
               onClick={() => {
                 setEditFilename(currentDocument?.filename ?? "");
                 setEditDescription(currentDocument?.description ?? "");
-                setEditTags((currentDocument?.tags ?? []).join(", "));
                 setEditError(null);
                 setEditOpen(true);
               }}
             >
               <Pencil className="h-4 w-4" />
             </button>
-          ) : null}
+          )}
         </div>
         {!isDocumentDetail && (
           <div className="mt-md border-b border-border-light">

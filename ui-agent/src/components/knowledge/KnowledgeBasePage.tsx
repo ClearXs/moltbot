@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Plus, Settings2 } from "lucide-react";
+import { Check, Plus, Settings2, Tag, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { KnowledgeBaseList } from "@/components/knowledge/KnowledgeBaseList";
 import { KnowledgeDetail } from "@/components/knowledge/KnowledgeDetail";
@@ -10,6 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
 
@@ -166,7 +173,7 @@ export function KnowledgeBasePage() {
                           <button
                             key={tag.tagId}
                             type="button"
-                            className="flex w-full items-center justify-between rounded-md border border-border-light px-sm py-xs text-left hover:bg-primary/5"
+                            className="flex w-full items-center justify-between rounded-md px-sm py-xs text-left hover:bg-primary/5"
                             onClick={() =>
                               setSelectedFilterTags((prev) =>
                                 prev.includes(tag.name)
@@ -216,11 +223,9 @@ export function KnowledgeBasePage() {
               </Button>
             </div>
             <div className="flex items-center gap-sm">
-              <select
-                className="h-9 rounded-md border border-border-light bg-white px-sm text-xs"
+              <Select
                 value={filterVisibility}
-                onChange={(e) => {
-                  const value = e.target.value as typeof filterVisibility;
+                onValueChange={(value: typeof filterVisibility) => {
                   setFilterVisibility(value);
                   void loadKbList({
                     offset: 0,
@@ -230,11 +235,16 @@ export function KnowledgeBasePage() {
                   });
                 }}
               >
-                <option value="all">全部权限</option>
-                <option value="private">仅自己</option>
-                <option value="team">团队</option>
-                <option value="public">公开</option>
-              </select>
+                <SelectTrigger className="h-9 w-[120px]">
+                  <SelectValue placeholder="全部权限" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部权限</SelectItem>
+                  <SelectItem value="private">仅自己</SelectItem>
+                  <SelectItem value="team">团队</SelectItem>
+                  <SelectItem value="public">公开</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <KnowledgeBaseList
@@ -303,15 +313,19 @@ export function KnowledgeBasePage() {
             </div>
             <div>
               <div className="text-xs text-text-tertiary mb-xs">权限</div>
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-xs"
+              <Select
                 value={visibility}
-                onChange={(e) => setVisibility(e.target.value as typeof visibility)}
+                onValueChange={(value: typeof visibility) => setVisibility(value)}
               >
-                <option value="private">仅自己</option>
-                <option value="team">团队</option>
-                <option value="public">公开</option>
-              </select>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="仅自己" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">仅自己</SelectItem>
+                  <SelectItem value="team">团队</SelectItem>
+                  <SelectItem value="public">公开</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <div className="text-xs text-text-tertiary mb-xs">标签</div>
@@ -402,7 +416,7 @@ export function KnowledgeBasePage() {
         </DialogContent>
       </Dialog>
       <Dialog open={manageTagsOpen} onOpenChange={setManageTagsOpen}>
-        <DialogContent className="w-[42rem] max-w-[92vw] p-6">
+        <DialogContent className="w-[42rem] max-w-[92vw] p-6 border-0">
           <DialogHeader>
             <DialogTitle>标签管理</DialogTitle>
           </DialogHeader>
@@ -412,13 +426,34 @@ export function KnowledgeBasePage() {
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 placeholder="新标签名称"
+                className="flex-1"
               />
-              <input
-                className="h-9 w-14 rounded border border-border-light bg-white px-1"
-                type="color"
-                value={newTagColor}
-                onChange={(e) => setNewTagColor(e.target.value)}
-              />
+              <div className="flex items-center gap-1">
+                {[
+                  "#64748b",
+                  "#ef4444",
+                  "#f97316",
+                  "#eab308",
+                  "#22c55e",
+                  "#14b8a6",
+                  "#3b82f6",
+                  "#8b5cf6",
+                  "#ec4899",
+                ].map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`h-7 w-7 rounded-full border-2 transition-all ${
+                      newTagColor === color
+                        ? "border-text-primary scale-110"
+                        : "border-transparent hover:scale-110"
+                    }`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setNewTagColor(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
               <Button
                 size="sm"
                 disabled={isUpdatingTags || !newTagName.trim()}
@@ -432,32 +467,41 @@ export function KnowledgeBasePage() {
               </Button>
             </div>
             <div className="max-h-64 space-y-1 overflow-auto pr-1">
-              {availableTags.map((tag) => (
-                <div
-                  key={tag.tagId}
-                  className="flex items-center justify-between rounded-md border border-border-light px-sm py-xs"
-                >
-                  <span className="inline-flex items-center gap-2 text-sm text-text-primary">
-                    <span
-                      className="inline-block h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: tag.color ?? "#64748b" }}
-                    />
-                    {tag.name}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-error hover:text-error"
-                    disabled={isUpdatingTags}
-                    onClick={async () => {
-                      await deleteAvailableTag(tag.tagId);
-                      setSelectedFilterTags((prev) => prev.filter((name) => name !== tag.name));
-                    }}
+              {availableTags.map((tag) => {
+                const isSelected = selectedFilterTags.includes(tag.name);
+                return (
+                  <div
+                    key={tag.tagId}
+                    className="flex items-center justify-between rounded-md px-sm py-xs"
                   >
-                    删除
-                  </Button>
-                </div>
-              ))}
+                    <div className="inline-flex items-center gap-2 text-sm">
+                      <Tag className="h-3.5 w-3.5 text-text-tertiary" />
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: tag.color ?? "#64748b" }}
+                      />
+                      <span>{tag.name}</span>
+                      {isSelected ? (
+                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                          已选择
+                        </span>
+                      ) : null}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-error hover:text-error"
+                      disabled={isUpdatingTags}
+                      onClick={async () => {
+                        await deleteAvailableTag(tag.tagId);
+                        setSelectedFilterTags((prev) => prev.filter((name) => name !== tag.name));
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </DialogContent>

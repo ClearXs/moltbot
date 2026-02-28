@@ -6,6 +6,12 @@ import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { hashText } from "./internal.js";
 import {
+  KnowledgeGraphBuilder,
+  KnowledgeGraphSearcher,
+  clearKnowledgeGraph,
+  getGraphBuildTask,
+} from "./knowledge-graph-builder.js";
+import {
   extractTriplesViaLlm,
   hashTripleKey,
   writeTriplesJsonl,
@@ -15,12 +21,16 @@ import {
 import { ProcessorRegistry, type ProcessorOptions } from "./knowledge-processor.js";
 import type {
   KnowledgeBaseEntry,
+  KnowledgeBaseGraphConfig,
   KnowledgeBaseRuntimeSettings,
   KnowledgeBaseSettingsEntry,
   KnowledgeBaseSettings,
   KnowledgeChunkConfig,
   KnowledgeDocument,
   KnowledgeGraphRun,
+  KnowledgeGraphBuildTask,
+  KnowledgeGraphSearchResult,
+  KnowledgeGraphStats,
   KnowledgeIndexConfig,
   KnowledgeRetrievalConfig,
 } from "./knowledge-schema.js";
@@ -153,7 +163,7 @@ export type KnowledgeVectorizationSettings = {
   model?: string;
 };
 
-export type KnowledgeGraphSettingsState = KnowledgeGraphSettings;
+export type KnowledgeGraphSettingsState = KnowledgeBaseGraphConfig;
 
 export type KnowledgeSettings = {
   vectorization: KnowledgeVectorizationSettings;
@@ -186,6 +196,10 @@ const DEFAULT_INDEX_CONFIG: KnowledgeIndexConfig = {
 
 const DEFAULT_BASE_GRAPH_CONFIG = {
   enabled: false,
+  minTriples: 3,
+  maxTriples: 50,
+  triplesPerKTokens: 10,
+  maxDepth: 3,
 } as const;
 
 const DEFAULT_BASE_VECTORIZATION_CONFIG = {
@@ -557,7 +571,11 @@ export class KnowledgeManager {
     const graph: KnowledgeGraphSettingsState = {
       ...config.graph,
       ...graphOverrides,
-      extractor: "llm",
+      extractor: graphOverrides.extractor ?? "llm",
+      minTriples: graphOverrides.minTriples ?? 3,
+      maxTriples: graphOverrides.maxTriples ?? 50,
+      triplesPerKTokens: graphOverrides.triplesPerKTokens ?? 10,
+      maxDepth: graphOverrides.maxDepth ?? 3,
     };
     return {
       vectorization,
@@ -1250,7 +1268,7 @@ export class KnowledgeManager {
         kbId,
         params.documentId,
         "running",
-        params.settings.extractor,
+        params.settings.extractor ?? "llm",
         params.settings.model ?? null,
         now,
         now,
@@ -1258,7 +1276,7 @@ export class KnowledgeManager {
     try {
       const extractResult = await extractTriplesViaLlm({
         text: params.content,
-        settings: params.settings,
+        settings: params.settings as KnowledgeGraphSettings,
         cfg: this.cfg,
         agentId: params.agentId,
         workspaceDir: this.baseDir,
@@ -1328,6 +1346,8 @@ export class KnowledgeManager {
         documentId: params.documentId,
         kbId: params.kbId,
       });
+
+    // Delete legacy graph data
     this.db
       .prepare(`DELETE FROM knowledge_graph_triples WHERE kb_id = ? AND document_id = ?`)
       .run(kbId, params.documentId);
@@ -1339,6 +1359,20 @@ export class KnowledgeManager {
         .prepare(`DELETE FROM knowledge_graph_fts WHERE kb_id = ? AND document_id = ?`)
         .run(kbId, params.documentId);
     }
+
+    // Delete enhanced graph data (kg_entities, kg_relations, etc.)
+    this.db
+      .prepare(`DELETE FROM kg_relations WHERE kb_id = ? AND document_id = ?`)
+      .run(kbId, params.documentId);
+    this.db
+      .prepare(`DELETE FROM kg_entity_descriptions WHERE kb_id = ? AND document_id = ?`)
+      .run(kbId, params.documentId);
+    this.db
+      .prepare(`DELETE FROM kg_entities WHERE kb_id = ? AND document_id = ?`)
+      .run(kbId, params.documentId);
+    this.db
+      .prepare(`DELETE FROM kg_build_tasks WHERE kb_id = ? AND document_id = ?`)
+      .run(kbId, params.documentId);
   }
 
   private hasGraphFts(): boolean {
@@ -1911,6 +1945,217 @@ export class KnowledgeManager {
     }
     return this.resolveBaseIdForAgent({ agentId: params.agentId });
   }
+
+  // ============================================================
+  // Knowledge Graph Methods (Enhanced)
+  // ============================================================
+
+  /**
+   * Build knowledge graph for a document
+   */
+  buildKnowledgeGraph(params: { agentId: string; kbId: string; documentId: string }): {
+    taskId: string;
+  } {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    // Check if graph extraction is enabled (use KB-specific settings)
+    const baseSettings = this.getBaseSettings({ agentId: params.agentId, kbId: params.kbId });
+    if (!baseSettings.graph.enabled) {
+      throw new Error("Graph extraction is not enabled for this knowledge base");
+    }
+
+    // Get agent-level settings for extraction parameters
+    const settings = this.getSettings(params.agentId);
+
+    const builder = new KnowledgeGraphBuilder({
+      db: this.db,
+      kbId: params.kbId,
+      documentId: params.documentId,
+      agentId: params.agentId,
+      maxEntities: settings.graph.maxEntities,
+      extractionTimeout: settings.graph.extractionTimeout,
+    });
+
+    // Build in background (fire and forget)
+    builder.build().catch((err) => {
+      log.error(`Graph build failed for document ${params.documentId}: ${err}`);
+    });
+
+    return { taskId: builder.getTaskStatus().id };
+  }
+
+  /**
+   * Build knowledge graph for all documents in a knowledge base
+   */
+  buildAllKnowledgeGraphs(params: { agentId: string; kbId: string }): {
+    taskIds: string[];
+    documentCount: number;
+  } {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    // Check if graph extraction is enabled (use KB-specific settings)
+    const baseSettings = this.getBaseSettings({ agentId: params.agentId, kbId: params.kbId });
+    if (!baseSettings.graph.enabled) {
+      throw new Error("Graph extraction is not enabled for this knowledge base");
+    }
+
+    // Get agent-level settings for extraction parameters
+    const settings = this.getSettings(params.agentId);
+
+    // Get all documents in the KB
+    const documents = this.listDocuments({
+      agentId: params.agentId,
+      kbId: params.kbId,
+      limit: 1000,
+    });
+
+    const taskIds: string[] = [];
+
+    // Build graph for each document
+    for (const doc of documents) {
+      const builder = new KnowledgeGraphBuilder({
+        db: this.db,
+        kbId: params.kbId,
+        documentId: doc.id,
+        agentId: params.agentId,
+        maxEntities: settings.graph.maxEntities,
+        extractionTimeout: settings.graph.extractionTimeout,
+      });
+
+      // Build in background
+      builder.build().catch((err) => {
+        log.error(`Graph build failed for document ${doc.id}: ${err}`);
+      });
+
+      taskIds.push(builder.getTaskStatus().id);
+    }
+
+    return { taskIds, documentCount: documents.length };
+  }
+
+  /**
+   * Get knowledge graph build task status
+   */
+  getGraphBuildStatus(params: { taskId: string }): KnowledgeGraphBuildTask | null {
+    return getGraphBuildTask(this.db, params.taskId);
+  }
+
+  /**
+   * Search knowledge graph
+   */
+  searchKnowledgeGraph(params: {
+    agentId: string;
+    kbId: string;
+    query: string;
+    mode?: "local" | "global" | "hybrid" | "naive";
+    topK?: number;
+  }): Promise<KnowledgeGraphSearchResult> {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    const searcher = new KnowledgeGraphSearcher(this.db, params.kbId);
+    return searcher.hybridSearch(params.query, {
+      mode: params.mode || "hybrid",
+      topK: params.topK || 10,
+      rrfK: 60, // Default RRF k value
+    });
+  }
+
+  /**
+   * Get knowledge graph statistics
+   */
+  getKnowledgeGraphStats(params: { agentId: string; kbId: string }): KnowledgeGraphStats {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    const searcher = new KnowledgeGraphSearcher(this.db, params.kbId);
+    return searcher.getStats();
+  }
+
+  /**
+   * Clear all graph data for a knowledge base
+   */
+  clearGraph(params: { agentId: string; kbId: string }): void {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    clearKnowledgeGraph(this.db, params.kbId);
+  }
+
+  /**
+   * Get all graph data (nodes and edges) for visualization
+   */
+  getKnowledgeGraphData(params: { agentId: string; kbId: string; limit?: number }): {
+    nodes: Array<{ id: string; name: string; type: string | null; description?: string }>;
+    edges: Array<{ id: string; source: string; target: string; keywords: string[] }>;
+  } {
+    const config = this.getConfig(params.agentId);
+    if (!config) {
+      throw new Error(`Knowledge base is disabled for agent ${params.agentId}`);
+    }
+
+    const limit = params.limit || 500;
+
+    // Get entities (nodes)
+    const entities = this.db
+      .prepare(
+        `SELECT e.id, e.name, e.type, d.description
+         FROM kg_entities e
+         LEFT JOIN kg_entity_descriptions d ON e.id = d.entity_id
+         WHERE e.kb_id = ?
+         ORDER BY e.name
+         LIMIT ?`,
+      )
+      .all(params.kbId, limit) as Array<{
+      id: string;
+      name: string;
+      type: string | null;
+      description?: string;
+    }>;
+
+    // Get relations (edges)
+    const relations = this.db
+      .prepare(
+        `SELECT r.id, r.source_entity_id, r.target_entity_id, r.keywords
+         FROM kg_relations r
+         WHERE r.kb_id = ?
+         ORDER BY r.keywords
+         LIMIT ?`,
+      )
+      .all(params.kbId, limit) as Array<{
+      id: string;
+      source_entity_id: string;
+      target_entity_id: string;
+      keywords: string;
+    }>;
+
+    return {
+      nodes: entities.map((e) => ({
+        id: e.id,
+        name: e.name,
+        type: e.type,
+        description: e.description,
+      })),
+      edges: relations.map((r) => ({
+        id: r.id,
+        source: r.source_entity_id,
+        target: r.target_entity_id,
+        keywords: r.keywords ? r.keywords.split(",").filter(Boolean) : [],
+      })),
+    };
+  }
 }
 
 function normalizeTripleOrNull(
@@ -1964,9 +2209,13 @@ function mergeIndexConfig(input: Partial<KnowledgeIndexConfig>): KnowledgeIndexC
   };
 }
 
-function mergeBaseGraphConfig(input: Partial<{ enabled: boolean }>): { enabled: boolean } {
+function mergeBaseGraphConfig(input: Partial<KnowledgeBaseGraphConfig>): KnowledgeBaseGraphConfig {
   return {
     enabled: input.enabled ?? DEFAULT_BASE_GRAPH_CONFIG.enabled,
+    minTriples: input.minTriples ?? DEFAULT_BASE_GRAPH_CONFIG.minTriples,
+    maxTriples: input.maxTriples ?? DEFAULT_BASE_GRAPH_CONFIG.maxTriples,
+    triplesPerKTokens: input.triplesPerKTokens ?? DEFAULT_BASE_GRAPH_CONFIG.triplesPerKTokens,
+    maxDepth: input.maxDepth ?? DEFAULT_BASE_GRAPH_CONFIG.maxDepth,
   };
 }
 

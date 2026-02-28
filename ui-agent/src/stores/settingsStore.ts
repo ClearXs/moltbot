@@ -7,7 +7,8 @@ export type SettingsTab =
   | "connectors"
   | "models"
   | "appearance"
-  | "advanced";
+  | "advanced"
+  | "quota";
 
 /** Partial config shape for the fields we expose in the UI */
 export interface OpenClawConfigPartial {
@@ -17,6 +18,26 @@ export interface OpenClawConfigPartial {
       name?: string;
       avatar?: string;
     };
+  };
+  models?: {
+    providers?: Record<
+      string,
+      {
+        baseUrl?: string;
+        apiKey?: string;
+        api?: string;
+        auth?: string;
+        models?: Array<{
+          id: string;
+          name?: string;
+          reasoning?: boolean;
+          input?: string[];
+          cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+          contextWindow?: number;
+          maxTokens?: number;
+        }>;
+      }
+    >;
   };
   gateway?: {
     port?: number;
@@ -70,6 +91,10 @@ export interface OpenClawConfigPartial {
     native?: boolean;
     config?: boolean;
     debug?: boolean;
+  };
+  quota?: {
+    enabled?: boolean;
+    users?: Record<string, { limit: number; spent: number }>;
   };
 }
 

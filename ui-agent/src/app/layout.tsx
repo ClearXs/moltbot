@@ -15,8 +15,11 @@ const notoSansSC = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "Bid Agent",
-  description: "AI-powered bidding agent platform",
+  title: "Hovi",
+  description: "Hovi - 你的虚拟个人助手",
+  icons: {
+    icon: "/img/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

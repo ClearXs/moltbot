@@ -5,6 +5,11 @@ import type { DatabaseSync } from "node:sqlite";
  * This schema stores document metadata, tags, and relationships.
  * Vector embeddings are stored in the existing chunks_vec table via source='knowledge'.
  */
+/**
+ * Enhanced Knowledge Graph Schema
+ * Extends the basic triples schema with entities, relations, and task management.
+ */
+
 export function ensureKnowledgeSchema(db: DatabaseSync): void {
   // Document metadata table
   db.exec(`
@@ -142,6 +147,98 @@ export function ensureKnowledgeSchema(db: DatabaseSync): void {
     // FTS5 may be unavailable; fallback to non-FTS search.
   }
 
+  // ============================================================
+  // Enhanced Knowledge Graph Tables (New)
+  // ============================================================
+
+  // Entities table - stores extracted entities with type and description
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kg_entities (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL,
+      document_id TEXT,
+      name TEXT NOT NULL,
+      type TEXT,
+      description TEXT,
+      source_text TEXT,
+      embedding_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `);
+
+  // Relations table - stores relationships between entities
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kg_relations (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL,
+      source_entity_id TEXT NOT NULL,
+      target_entity_id TEXT NOT NULL,
+      keywords TEXT,
+      description TEXT,
+      weight REAL DEFAULT 1.0,
+      document_id TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (source_entity_id) REFERENCES kg_entities(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_entity_id) REFERENCES kg_entities(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Entity descriptions history - for merging descriptions
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kg_entity_descriptions (
+      id TEXT PRIMARY KEY,
+      entity_id TEXT NOT NULL,
+      kb_id TEXT NOT NULL,
+      document_id TEXT,
+      description TEXT NOT NULL,
+      source_chunk_id TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (entity_id) REFERENCES kg_entities(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Graph build tasks - for async task management
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kg_build_tasks (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL,
+      document_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      progress INTEGER DEFAULT 0,
+      total_chunks INTEGER DEFAULT 0,
+      processed_chunks INTEGER DEFAULT 0,
+      entities_count INTEGER DEFAULT 0,
+      relations_count INTEGER DEFAULT 0,
+      error TEXT,
+      started_at INTEGER,
+      completed_at INTEGER,
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  // Indexes for enhanced graph tables
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_entities_kb ON kg_entities(kb_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_entities_name ON kg_entities(name)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_entities_type ON kg_entities(type)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_entities_doc ON kg_entities(document_id)`);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_relations_kb ON kg_relations(kb_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_relations_source ON kg_relations(source_entity_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_relations_target ON kg_relations(target_entity_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_relations_doc ON kg_relations(document_id)`);
+
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_kg_entity_descriptions_entity ON kg_entity_descriptions(entity_id)`,
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_kg_entity_descriptions_kb ON kg_entity_descriptions(kb_id)`,
+  );
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_build_tasks_kb ON kg_build_tasks(kb_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_build_tasks_doc ON kg_build_tasks(document_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_kg_build_tasks_status ON kg_build_tasks(status)`);
+
   // Indexes for efficient queries
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_tags_tag ON kb_tags(tag)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_kb_documents_agent ON kb_documents(owner_agent_id)`);
@@ -257,6 +354,16 @@ export type KnowledgeIndexConfig = {
 
 export type KnowledgeBaseGraphConfig = {
   enabled: boolean;
+  extractor?: "llm"; // 实体抽取器，默认 llm
+  provider?: string; // LLM provider
+  model?: string; // LLM model
+  maxEntities?: number; // 最大实体数限制，默认 5000
+  extractionTimeout?: number; // LLM 抽取超时（毫秒），默认 60000
+  minTriples: number; // 每文档最小三元组数，默认 3
+  maxTriples: number; // 每文档最大三元组数，默认 50
+  triplesPerKTokens: number; // 每千token三元组数，默认 10
+  maxDepth: number; // 最大遍历深度，默认 3
+  rrfK?: number; // RRF 融合参数，默认 60
 };
 
 export type KnowledgeBaseRuntimeSettings = {
@@ -283,7 +390,7 @@ export type KnowledgeBaseSettingsEntry = {
 
 function ensureColumn(
   db: DatabaseSync,
-  table: "kb_documents" | "kb_base_settings",
+  table: "kb_documents" | "kb_base_settings" | "kg_entities" | "kg_relations" | "kg_build_tasks",
   column: string,
   definition: string,
 ): void {
@@ -316,4 +423,113 @@ export type KnowledgeGraphTriple = {
   t: string;
   props_json?: string | null;
   created_at: number;
+};
+
+// ============================================================
+// Enhanced Knowledge Graph Types (New)
+// ============================================================
+
+/**
+ * Entity extracted from document text
+ */
+export type KnowledgeEntity = {
+  id: string;
+  kb_id: string;
+  document_id?: string | null;
+  name: string;
+  type?: string | null;
+  description?: string | null;
+  source_text?: string | null;
+  embedding_id?: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
+/**
+ * Relationship between entities
+ */
+export type KnowledgeRelation = {
+  id: string;
+  kb_id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  keywords?: string | null; // JSON array of keywords
+  description?: string | null;
+  weight: number;
+  document_id?: string | null;
+  created_at: number;
+};
+
+/**
+ * Entity description history entry
+ */
+export type KnowledgeEntityDescription = {
+  id: string;
+  entity_id: string;
+  kb_id: string;
+  document_id?: string | null;
+  description: string;
+  source_chunk_id?: string | null;
+  created_at: number;
+};
+
+/**
+ * Graph build task status
+ */
+export type KnowledgeGraphBuildTask = {
+  id: string;
+  kb_id: string;
+  document_id: string;
+  status: "pending" | "running" | "success" | "failed";
+  progress: number;
+  total_chunks: number;
+  processed_chunks: number;
+  entities_count: number;
+  relations_count: number;
+  error?: string | null;
+  started_at?: number | null;
+  completed_at?: number | null;
+  created_at: number;
+};
+
+/**
+ * Graph search result
+ */
+export type KnowledgeGraphSearchResult = {
+  // Entity results
+  entities: Array<{
+    id: string;
+    name: string;
+    type: string | null;
+    description: string | null;
+    score: number;
+  }>;
+
+  // Relation results
+  relations: Array<{
+    id: string;
+    sourceName: string;
+    targetName: string;
+    keywords: string[];
+    description: string | null;
+  }>;
+
+  // Chunk results (from vector search)
+  chunks: Array<{
+    id: string;
+    documentId: string;
+    text: string;
+    score: number;
+  }>;
+};
+
+/**
+ * Graph statistics for a knowledge base
+ */
+export type KnowledgeGraphStats = {
+  totalEntities: number;
+  totalRelations: number;
+  entityTypes: Record<string, number>;
+  topKeywords: string[];
+  topEntities: Array<{ name: string; degree: number }>;
 };

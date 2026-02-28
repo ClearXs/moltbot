@@ -1,7 +1,7 @@
 // Keep server maxPayload aligned with gateway client maxPayload so high-res canvas snapshots
 // don't get disconnected mid-invoke with "Max payload size exceeded".
-export const MAX_PAYLOAD_BYTES = 25 * 1024 * 1024;
-export const MAX_BUFFERED_BYTES = 50 * 1024 * 1024; // per-connection send buffer limit (2x max payload)
+export const MAX_PAYLOAD_BYTES = 1024 * 1024 * 1024; // 1GB for large file uploads
+export const MAX_BUFFERED_BYTES = 2 * 1024 * 1024 * 1024; // per-connection send buffer limit (2x max payload)
 
 const DEFAULT_MAX_CHAT_HISTORY_MESSAGES_BYTES = 6 * 1024 * 1024; // keep history responses comfortably under client WS limits
 let maxChatHistoryMessagesBytes = DEFAULT_MAX_CHAT_HISTORY_MESSAGES_BYTES;

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
+import { useToastStore } from "@/stores/toastStore";
 
 type ModelCatalogEntry = {
   id: string;
@@ -85,6 +86,8 @@ export function KnowledgeSettingsTab() {
     deleteKb,
     isDeletingKb,
   } = useKnowledgeBaseStore();
+
+  const { addToast } = useToastStore();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -272,6 +275,11 @@ export function KnowledgeSettingsTab() {
   useEffect(() => {
     if (!baseSettings) return;
     if (baseRetrievalDirty || graphDirty || vectorDirty) return;
+    if (!baseSettings.vectorization) return;
+    if (!baseSettings.chunk) return;
+    if (!baseSettings.index) return;
+    if (!baseSettings.retrieval) return;
+    if (!baseSettings.graph) return;
     setVectorEnabled(Boolean(baseSettings.vectorization.enabled));
     setChunkEnabled(Boolean(baseSettings.chunk.enabled));
     setChunkSize(baseSettings.chunk.size);
@@ -325,6 +333,8 @@ export function KnowledgeSettingsTab() {
   useEffect(() => {
     if (!settings) return;
     if (vectorDirty || graphDirty) return;
+    if (!settings.vectorization) return;
+    if (!settings.graph) return;
     const vectorProviderValue = settings.vectorization.provider || fallbackProvider || "auto";
     const vectorModelValue =
       settings.vectorization.model || resolveDefaultModel(vectorProviderValue);
@@ -414,8 +424,10 @@ export function KnowledgeSettingsTab() {
                   });
                   setKbInfoDirty(false);
                   setTagDirty(false);
+                  addToast({ title: "知识库信息已保存", variant: "success" });
                 } catch (error) {
                   setUpdateError(error instanceof Error ? error.message : "保存失败");
+                  addToast({ title: "知识库信息保存失败", variant: "error" });
                 }
               }}
             >
@@ -526,8 +538,10 @@ export function KnowledgeSettingsTab() {
                 ]);
                 setVectorDirty(false);
                 setBaseRetrievalDirty(false);
+                addToast({ title: "向量化设置已保存", variant: "success" });
               } catch (error) {
                 setSettingsError(error instanceof Error ? error.message : "向量化设置保存失败");
+                addToast({ title: "向量化设置保存失败", variant: "error" });
               }
             }}
           >
@@ -670,8 +684,10 @@ export function KnowledgeSettingsTab() {
                   },
                 });
                 setBaseRetrievalDirty(false);
+                addToast({ title: "检索设置已保存", variant: "success" });
               } catch (error) {
                 setSettingsError(error instanceof Error ? error.message : "检索设置保存失败");
+                addToast({ title: "检索设置保存失败", variant: "error" });
               }
             }}
           >
@@ -738,35 +754,30 @@ export function KnowledgeSettingsTab() {
           <div className="text-sm font-semibold text-text-primary">图谱化</div>
           <Button
             size="sm"
-            disabled={isLoadingSettings || isUpdatingSettings || isUpdatingBaseSettings}
+            disabled={isLoadingSettings || isUpdatingSettings}
             onClick={async () => {
               setSettingsError(null);
               try {
-                await Promise.all([
-                  updateBaseSettings({
-                    settings: {
-                      graph: {
-                        enabled: baseGraphEnabled,
-                      },
-                    },
-                  }),
-                  updateSettings({
-                    graph: {
-                      enabled: baseGraphEnabled,
-                      extractor: graphExtractor,
-                      provider: graphProvider,
-                      model: graphModel,
-                    },
-                  }),
-                ]);
+                // 保存图谱设置（后端会自动同时更新 base 和 agent 级别）
+                await updateSettings({
+                  kbId: activeKbId ?? undefined,
+                  graph: {
+                    enabled: baseGraphEnabled,
+                    extractor: graphExtractor,
+                    provider: graphProvider,
+                    model: graphModel,
+                  },
+                });
                 setGraphDirty(false);
+                addToast({ title: "图谱化设置已保存", variant: "success" });
               } catch (error) {
                 setSettingsError(error instanceof Error ? error.message : "图谱化设置保存失败");
+                addToast({ title: "图谱化设置保存失败", variant: "error" });
               }
             }}
           >
             <Save className="mr-xs h-3.5 w-3.5" />
-            {isUpdatingSettings || isUpdatingBaseSettings ? "保存中..." : "保存图谱化设置"}
+            {isUpdatingSettings ? "保存中..." : "保存图谱化设置"}
           </Button>
         </div>
         {isLoadingSettings ? (

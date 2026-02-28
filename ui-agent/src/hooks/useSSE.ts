@@ -53,11 +53,10 @@ export const useSSE = (
       };
 
       eventSourceRef.current.onopen = () => {
-        console.log("SSE connection opened");
         reconnectAttemptsRef.current = 0;
       };
     } catch (error) {
-      console.error("Failed to create SSE connection:", error);
+      // Failed to create SSE connection
     }
   }, [url, onMessage, onError]);
 

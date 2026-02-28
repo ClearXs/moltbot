@@ -1,22 +1,13 @@
 "use client";
 
-import {
-  Palette,
-  Check,
-  Eye,
-  EyeOff,
-  Loader2,
-  AlertCircle,
-  RefreshCcw,
-  Copy,
-} from "lucide-react";
+import { Palette, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCcw, Copy } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { THEMES, type ThemeName } from "@/config/themes";
-import { useThemeStore } from "@/stores/themeStore";
+import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useThemeStore } from "@/stores/themeStore";
 import { useToastStore } from "@/stores/toastStore";
 
 /* ------------------------------------------------------------------ */
@@ -116,7 +107,7 @@ function ThemeCard({
 /*  Main component                                                       */
 /* ------------------------------------------------------------------ */
 
-export function AppearanceTab() {
+export function AppearanceTab({ onClose }: { onClose?: () => void }) {
   const { theme, setTheme } = useThemeStore();
   const { config, isLoadingConfig, isSavingConfig, configError, loadConfig, patchConfig } =
     useSettingsStore();
@@ -166,10 +157,20 @@ export function AppearanceTab() {
     const result = await patchConfig(patch);
     if (result.ok) {
       setDirty(false);
-      addToast({
-        title: "外观设置已保存",
-        description: result.needsRestart ? "部分更改需要重启网关才能生效" : "设置已成功更新",
-      });
+      if (result.needsRestart) {
+        addToast({
+          title: "配置已保存，网关即将重启",
+          description: "设置页面将关闭，请稍候重新打开",
+        });
+        setTimeout(() => {
+          onClose?.();
+        }, 1500);
+      } else {
+        addToast({
+          title: "外观设置已保存",
+          description: "设置已成功更新",
+        });
+      }
     } else {
       addToast({
         title: "保存失败",
@@ -213,12 +214,42 @@ export function AppearanceTab() {
 
   return (
     <div className="space-y-0">
+      {/* ---- 顶部操作栏 ---- */}
+      <div className="flex items-center justify-between mb-4 pb-4 border-b border-border-light">
+        <div>
+          {configError && (
+            <p className="text-xs text-error flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {configError}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReset}
+            disabled={!dirty || isSavingConfig}
+          >
+            重置
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
+            {isSavingConfig ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                保存中...
+              </>
+            ) : (
+              "保存外观设置"
+            )}
+          </Button>
+        </div>
+      </div>
+
       {/* ---- Theme selection ---- */}
       <section>
         <SectionHeader icon={<Palette className="w-4 h-4" />} title="主题选择" />
-        <p className="text-xs text-text-tertiary mb-4">
-          选择一个预设主题,立即应用到整个界面。
-        </p>
+        <p className="text-xs text-text-tertiary mb-4">选择一个预设主题,立即应用到整个界面。</p>
         <div className="grid grid-cols-2 gap-3">
           {THEMES.map((t) => (
             <ThemeCard
@@ -322,38 +353,10 @@ export function AppearanceTab() {
                 <span className="text-lg">{assistantAvatar}</span>
               )}
             </div>
-            <span className="text-sm text-text-primary">
-              {assistantName || "Assistant"}
-            </span>
+            <span className="text-sm text-text-primary">{assistantName || "Assistant"}</span>
           </div>
         )}
       </section>
-
-      {/* ---- Save bar ---- */}
-      <div className="sticky bottom-0 bg-background pt-4 pb-2 border-t border-border-light mt-6 flex items-center justify-between">
-        {configError && (
-          <p className="text-xs text-error flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5" />
-            {configError}
-          </p>
-        )}
-        <div className="flex-1" />
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleReset} disabled={!dirty || isSavingConfig}>
-            重置
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
-            {isSavingConfig ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                保存中...
-              </>
-            ) : (
-              "保存外观设置"
-            )}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

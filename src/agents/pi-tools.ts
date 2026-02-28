@@ -428,7 +428,6 @@ export function createOpenClawCodingTools(options?: {
       agentAccountId: options?.agentAccountId,
       agentTo: options?.messageTo,
       agentThreadId: options?.messageThreadId,
-      turnId: options?.turnId,
       agentGroupId: options?.groupId ?? null,
       agentGroupChannel: options?.groupChannel ?? null,
       agentGroupSpace: options?.groupSpace ?? null,

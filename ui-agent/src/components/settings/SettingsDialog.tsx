@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings, Zap, Bot, Palette, Cog, Plug } from "lucide-react";
+import { Settings, Zap, Bot, Palette, Cog, Plug, DollarSign } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useSettingsStore, type SettingsTab } from "@/stores/settingsStore";
@@ -9,6 +9,7 @@ import { AppearanceTab } from "./tabs/AppearanceTab";
 import { ConnectorsTab } from "./tabs/ConnectorsTab";
 import { GeneralSettingsTab } from "./tabs/GeneralSettingsTab";
 import { ModelsTab } from "./tabs/ModelsTab";
+import { QuotaTab } from "./tabs/QuotaTab";
 import { SkillsTab } from "./tabs/SkillsTab";
 
 const tabs: { value: SettingsTab; label: string; icon: React.ReactNode }[] = [
@@ -18,6 +19,7 @@ const tabs: { value: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { value: "models", label: "模型", icon: <Bot className="w-4 h-4" /> },
   { value: "appearance", label: "外观", icon: <Palette className="w-4 h-4" /> },
   { value: "advanced", label: "高级", icon: <Cog className="w-4 h-4" /> },
+  { value: "quota", label: "配额", icon: <DollarSign className="w-4 h-4" /> },
 ];
 
 export function SettingsDialog() {
@@ -50,7 +52,7 @@ export function SettingsDialog() {
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
             <TabsContent value="general" className="mt-0 h-full">
-              <GeneralSettingsTab />
+              <GeneralSettingsTab onClose={closeSettings} />
             </TabsContent>
             <TabsContent value="skills" className="mt-0 h-full">
               <SkillsTab />
@@ -59,13 +61,16 @@ export function SettingsDialog() {
               <ConnectorsTab />
             </TabsContent>
             <TabsContent value="models" className="mt-0 h-full">
-              <ModelsTab />
+              <ModelsTab onClose={closeSettings} />
             </TabsContent>
             <TabsContent value="appearance" className="mt-0 h-full">
-              <AppearanceTab />
+              <AppearanceTab onClose={closeSettings} />
             </TabsContent>
             <TabsContent value="advanced" className="mt-0 h-full">
-              <AdvancedTab />
+              <AdvancedTab onClose={closeSettings} />
+            </TabsContent>
+            <TabsContent value="quota" className="mt-0 h-full">
+              <QuotaTab onClose={closeSettings} />
             </TabsContent>
           </div>
         </Tabs>

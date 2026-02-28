@@ -1,24 +1,45 @@
 import { useConnectionStore } from "@/stores/connectionStore";
+import type { ClawdbotWebSocketClient } from "./clawdbot-websocket";
 
-const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_HTTP_URL || "";
-const AGENT_ID_HEADER = process.env.NEXT_PUBLIC_AGENT_ID || "";
+// 构建 Headers（供其他组件使用）
+export const buildHeaders = () => {
+  const token = useConnectionStore.getState().gatewayToken;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const AGENT_ID_HEADER = process.env.NEXT_PUBLIC_AGENT_ID || "";
+  if (AGENT_ID_HEADER) headers["x-openclaw-agent-id"] = AGENT_ID_HEADER;
+  return headers;
+};
 
-const isAbsoluteUrl = (value: string) => /^https?:\/\//.test(value);
+// 错误消息
+export const KNOWLEDGE_ERRORS = {
+  NOT_CONNECTED: "无法连接到服务器，请刷新页面或检查网络连接",
+  REQUEST_FAILED: "请求失败",
+  TIMEOUT: "请求超时",
+} as const;
 
-const resolveGatewayBaseUrl = () => {
-  if (isAbsoluteUrl(GATEWAY_HTTP_URL)) return GATEWAY_HTTP_URL;
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${GATEWAY_HTTP_URL}`;
+// 获取 WebSocket 客户端
+function getWsClient(): ClawdbotWebSocketClient | null {
+  const store = useConnectionStore.getState();
+  return store.wsClient;
+}
+
+// 检查是否已连接
+function isWsConnected(): boolean {
+  const client = getWsClient();
+  return client?.isConnected() ?? false;
+}
+
+// 通过 WebSocket 调用知识库方法
+async function callKnowledgeWs<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  const client = getWsClient();
+  if (!client || !client.isConnected()) {
+    throw new Error(KNOWLEDGE_ERRORS.NOT_CONNECTED);
   }
-  return `http://localhost${GATEWAY_HTTP_URL}`;
-};
+  return client.sendRequest<T>(method, params);
+}
 
-const buildGatewayUrl = (path: string) => {
-  const base = resolveGatewayBaseUrl();
-  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path;
-  return new URL(normalizedPath, normalizedBase);
-};
+// ========== 类型定义 ==========
 
 export type KnowledgeDocument = {
   id: string;
@@ -174,47 +195,44 @@ export type KnowledgeBaseUpdateParams = {
   tags?: KnowledgeBaseTagInput[];
 };
 
-export type KnowledgeSearchResult = {
-  documentId: string;
-  filename: string;
-  chunkId?: string;
-  snippet?: string;
-  score?: number;
-  lines?: string;
-};
-
 export type KnowledgeSearchResponse = {
   query: string;
   resultsCount: number;
   results: KnowledgeSearchResult[];
 };
 
-export const buildHeaders = () => {
-  const token = useConnectionStore.getState().gatewayToken;
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (AGENT_ID_HEADER) headers["x-openclaw-agent-id"] = AGENT_ID_HEADER;
-  return headers;
+export type KnowledgeSearchResult = {
+  documentId: string;
+  kbId: string | null;
+  filename: string;
+  chunkId: string;
+  snippet: string;
+  score: number;
+  lines: string;
 };
 
-export const getGatewayBaseUrl = () => resolveGatewayBaseUrl();
+export const getGatewayBaseUrl = () => {
+  const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_HTTP_URL || "";
+  if (/^https?:\/\//.test(GATEWAY_HTTP_URL)) return GATEWAY_HTTP_URL;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${GATEWAY_HTTP_URL}`;
+  }
+  return `http://localhost${GATEWAY_HTTP_URL}`;
+};
+
+// ========== API 函数 ==========
 
 export async function createKnowledgeBase(
   params: KnowledgeBaseCreateParams,
 ): Promise<KnowledgeBase> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/base`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
+  return callKnowledgeWs<KnowledgeBase>("knowledge.create", {
+    name: params.name,
+    description: params.description,
+    icon: params.icon,
+    visibility: params.visibility,
+    tags: params.tags,
+    settings: params.settings,
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库创建失败");
-  }
-  return data as KnowledgeBase;
 }
 
 export async function listKnowledgeBases(params: {
@@ -224,64 +242,199 @@ export async function listKnowledgeBases(params: {
   visibility?: "private" | "team" | "public";
   tags?: string[];
 }): Promise<KnowledgeBaseListResponse> {
-  const url = buildGatewayUrl("/api/knowledge/base/list");
-  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-  if (typeof params.offset === "number") url.searchParams.set("offset", String(params.offset));
-  if (params.search) url.searchParams.set("search", params.search);
-  if (params.visibility) url.searchParams.set("visibility", params.visibility);
-  if (params.tags && params.tags.length > 0) {
-    params.tags.forEach((tag) => url.searchParams.append("tags", tag));
-  }
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库列表加载失败");
-  }
-  return data as KnowledgeBaseListResponse;
+  return callKnowledgeWs<KnowledgeBaseListResponse>("knowledge.list", {
+    limit: params.limit,
+    offset: params.offset,
+    search: params.search,
+    visibility: params.visibility,
+    tags: params.tags,
+  });
 }
 
 export async function getKnowledgeBase(kbId: string): Promise<KnowledgeBase> {
-  const url = buildGatewayUrl("/api/knowledge/base/get");
-  url.searchParams.set("kbId", kbId);
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库详情加载失败");
-  }
-  return data as KnowledgeBase;
+  return callKnowledgeWs<KnowledgeBase>("knowledge.get", { kbId });
 }
 
 export async function updateKnowledgeBase(
   params: KnowledgeBaseUpdateParams,
 ): Promise<KnowledgeBase> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/base`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
+  return callKnowledgeWs<KnowledgeBase>("knowledge.update", {
+    kbId: params.kbId,
+    name: params.name,
+    description: params.description,
+    icon: params.icon,
+    visibility: params.visibility,
+    tags: params.tags,
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库更新失败");
-  }
-  return data as KnowledgeBase;
 }
 
 export async function deleteKnowledgeBase(kbId: string): Promise<void> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/base/delete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
+  await callKnowledgeWs("knowledge.delete", { kbId });
+}
+
+export async function listKnowledge(params: {
+  kbId?: string;
+  tags?: string[];
+  limit?: number;
+  offset?: number;
+}): Promise<KnowledgeListResponse> {
+  return callKnowledgeWs<KnowledgeListResponse>("knowledge.documents", {
+    kbId: params.kbId,
+    tags: params.tags,
+    limit: params.limit,
+    offset: params.offset,
+  });
+}
+
+export async function getKnowledge(documentId: string, kbId?: string): Promise<KnowledgeDetail> {
+  return callKnowledgeWs<KnowledgeDetail>("knowledge.documentGet", { documentId, kbId });
+}
+
+export async function deleteKnowledge(params: {
+  documentId: string;
+  kbId?: string;
+}): Promise<void> {
+  await callKnowledgeWs("knowledge.documentDelete", {
+    documentId: params.documentId,
+    kbId: params.kbId,
+  });
+}
+
+export async function listKnowledgeChunks(params: {
+  documentId: string;
+  kbId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<KnowledgeChunksResponse> {
+  return callKnowledgeWs<KnowledgeChunksResponse>("knowledge.chunks", {
+    documentId: params.documentId,
+    kbId: params.kbId,
+    limit: params.limit,
+    offset: params.offset,
+  });
+}
+
+export async function getKnowledgeChunk(
+  chunkId: string,
+  kbId?: string,
+): Promise<KnowledgeChunkDetailResponse> {
+  return callKnowledgeWs<KnowledgeChunkDetailResponse>("knowledge.chunk.get", { chunkId, kbId });
+}
+
+export async function getKnowledgeSettings(): Promise<KnowledgeSettingsResponse> {
+  return callKnowledgeWs<KnowledgeSettingsResponse>("knowledge.settings.get", {});
+}
+
+export async function getKnowledgeBaseSettings(
+  kbId: string,
+): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
+  return callKnowledgeWs<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }>(
+    "knowledge.settings.get",
+    { kbId },
+  );
+}
+
+export async function updateKnowledgeBaseSettings(params: {
+  kbId: string;
+  settings: Partial<KnowledgeBaseRuntimeSettings>;
+}): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
+  return callKnowledgeWs<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }>(
+    "knowledge.settings.update",
+    { kbId: params.kbId, settings: params.settings },
+  );
+}
+
+export async function listKnowledgeTags(): Promise<{ tags: KnowledgeBaseTag[] }> {
+  return callKnowledgeWs<{ tags: KnowledgeBaseTag[] }>("knowledge.tags.list", {});
+}
+
+export async function createKnowledgeTag(params: {
+  name: string;
+  color?: string;
+}): Promise<KnowledgeBaseTag> {
+  return callKnowledgeWs<KnowledgeBaseTag>("knowledge.tags.create", {
+    name: params.name,
+    color: params.color,
+  });
+}
+
+export async function updateKnowledgeTag(params: {
+  tagId: string;
+  name?: string;
+  color?: string;
+}): Promise<KnowledgeBaseTag> {
+  return callKnowledgeWs<KnowledgeBaseTag>("knowledge.tags.update", {
+    tagId: params.tagId,
+    name: params.name,
+    color: params.color,
+  });
+}
+
+export async function deleteKnowledgeTag(tagId: string): Promise<{ success: boolean }> {
+  return callKnowledgeWs<{ success: boolean }>("knowledge.tags.delete", { tagId });
+}
+
+export async function updateKnowledgeSettings(params: {
+  kbId?: string;
+  vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
+  graph?: Partial<KnowledgeSettingsResponse["graph"]>;
+}): Promise<KnowledgeSettingsResponse> {
+  return callKnowledgeWs<KnowledgeSettingsResponse>("knowledge.settings.update", {
+    kbId: params.kbId,
+    settings: {
+      vectorization: params.vectorization,
+      graph: params.graph,
     },
-    body: JSON.stringify({ kbId }),
+  });
+}
+
+export async function knowledgeSearch(params: {
+  query: string;
+  limit?: number;
+  sessionKey?: string;
+  kbId?: string | null;
+}): Promise<KnowledgeSearchResponse> {
+  return callKnowledgeWs<KnowledgeSearchResponse>("knowledge.search", {
+    query: params.query,
+    limit: params.limit,
+    kbId: params.kbId ?? undefined,
+  });
+}
+
+// 文件上传仍然使用 HTTP（需要 FormData）
+export async function uploadKnowledge(params: {
+  kbId: string;
+  file: File;
+  description?: string;
+  tags?: string[];
+}): Promise<{ documentId: string; filename: string; size: number; indexed?: boolean }> {
+  const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_HTTP_URL || "";
+  const base = /^https?:\/\//.test(GATEWAY_HTTP_URL)
+    ? GATEWAY_HTTP_URL
+    : typeof window !== "undefined"
+      ? `${window.location.origin}${GATEWAY_HTTP_URL}`
+      : `http://localhost${GATEWAY_HTTP_URL}`;
+
+  const form = new FormData();
+  form.append("kbId", params.kbId);
+  form.append("file", params.file);
+  if (params.description) form.append("description", params.description);
+  if (params.tags && params.tags.length > 0) form.append("tags", params.tags.join(","));
+
+  const token = useConnectionStore.getState().gatewayToken;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${base}/api/knowledge/upload`, {
+    method: "POST",
+    headers,
+    body: form,
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data?.message || "知识库删除失败");
+    throw new Error(data?.message || KNOWLEDGE_ERRORS.REQUEST_FAILED);
   }
+  return data;
 }
 
 export async function updateKnowledge(params: {
@@ -297,20 +450,32 @@ export async function updateKnowledge(params: {
   indexed?: boolean;
   updatedAt?: string;
 }> {
+  const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_HTTP_URL || "";
+  const base = /^https?:\/\//.test(GATEWAY_HTTP_URL)
+    ? GATEWAY_HTTP_URL
+    : typeof window !== "undefined"
+      ? `${window.location.origin}${GATEWAY_HTTP_URL}`
+      : `http://localhost${GATEWAY_HTTP_URL}`;
+
   const form = new FormData();
   form.append("kbId", params.kbId);
   form.append("documentId", params.documentId);
   form.append("file", params.file);
   if (params.description) form.append("description", params.description);
   if (params.tags && params.tags.length > 0) form.append("tags", params.tags.join(","));
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/update`, {
+
+  const token = useConnectionStore.getState().gatewayToken;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${base}/api/knowledge/update`, {
     method: "POST",
-    headers: buildHeaders(),
+    headers,
     body: form,
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data?.message || "文档更新失败");
+    throw new Error(data?.message || KNOWLEDGE_ERRORS.REQUEST_FAILED);
   }
   return data;
 }
@@ -322,77 +487,13 @@ export async function updateKnowledgeMetadata(params: {
   description?: string;
   tags?: string[];
 }): Promise<KnowledgeDetail> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/metadata`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
+  return callKnowledgeWs<KnowledgeDetail>("knowledge.documentUpdate", {
+    kbId: params.kbId,
+    documentId: params.documentId,
+    filename: params.filename,
+    description: params.description,
+    tags: params.tags,
   });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "文档元信息更新失败");
-  }
-  return data as KnowledgeDetail;
-}
-
-export async function listKnowledge(params: {
-  kbId?: string;
-  tags?: string[];
-  limit?: number;
-  offset?: number;
-}): Promise<KnowledgeListResponse> {
-  const url = buildGatewayUrl("/api/knowledge/list");
-  if (params.kbId) url.searchParams.set("kbId", params.kbId);
-  if (params.tags && params.tags.length > 0) {
-    params.tags.forEach((tag) => url.searchParams.append("tags", tag));
-  }
-  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-  if (typeof params.offset === "number") url.searchParams.set("offset", String(params.offset));
-
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库列表加载失败");
-  }
-  return data as KnowledgeListResponse;
-}
-
-export async function getKnowledge(documentId: string, kbId?: string): Promise<KnowledgeDetail> {
-  const url = buildGatewayUrl("/api/knowledge/get");
-  url.searchParams.set("documentId", documentId);
-  if (kbId) url.searchParams.set("kbId", kbId);
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库详情加载失败");
-  }
-  return data as KnowledgeDetail;
-}
-
-export async function uploadKnowledge(params: {
-  kbId: string;
-  file: File;
-  description?: string;
-  tags?: string[];
-}): Promise<{ documentId: string; filename: string; size: number; indexed?: boolean }> {
-  const form = new FormData();
-  form.append("kbId", params.kbId);
-  form.append("file", params.file);
-  if (params.description) form.append("description", params.description);
-  if (params.tags && params.tags.length > 0) form.append("tags", params.tags.join(","));
-
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/upload`, {
-    method: "POST",
-    headers: buildHeaders(),
-    body: form,
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库上传失败");
-  }
-  return data;
 }
 
 export async function uploadKnowledgeWithProgress(
@@ -404,265 +505,179 @@ export async function uploadKnowledgeWithProgress(
   },
   onProgress?: (progress: number) => void,
 ): Promise<{ documentId: string; filename: string; size: number; indexed?: boolean }> {
+  const GATEWAY_HTTP_URL = process.env.NEXT_PUBLIC_GATEWAY_HTTP_URL || "";
+  const base = /^https?:\/\//.test(GATEWAY_HTTP_URL)
+    ? GATEWAY_HTTP_URL
+    : typeof window !== "undefined"
+      ? `${window.location.origin}${GATEWAY_HTTP_URL}`
+      : `http://localhost${GATEWAY_HTTP_URL}`;
+
   const form = new FormData();
   form.append("kbId", params.kbId);
   form.append("file", params.file);
   if (params.description) form.append("description", params.description);
   if (params.tags && params.tags.length > 0) form.append("tags", params.tags.join(","));
 
-  const headers = buildHeaders();
-
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${resolveGatewayBaseUrl()}/api/knowledge/upload`);
+    xhr.open("POST", `${base}/api/knowledge/upload`);
 
-    Object.entries(headers).forEach(([key, value]) => {
-      xhr.setRequestHeader(key, value);
-    });
+    const token = useConnectionStore.getState().gatewayToken;
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
     xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable || !onProgress) return;
-      const progress = Math.round((event.loaded / event.total) * 100);
-      onProgress(progress);
-    };
-
-    xhr.onerror = () => {
-      reject(new Error("知识库上传失败"));
+      if (event.lengthComputable && onProgress) {
+        const progress = Math.round((event.loaded / event.total) * 100);
+        onProgress(progress);
+      }
     };
 
     xhr.onload = () => {
-      let data: unknown;
-      try {
-        data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-      } catch {
-        data = {};
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data);
+        } catch {
+          reject(new Error("Invalid response"));
+        }
+      } else {
+        reject(new Error(KNOWLEDGE_ERRORS.REQUEST_FAILED));
       }
-
-      if (xhr.status < 200 || xhr.status >= 300) {
-        const message =
-          data && typeof data === "object" && "message" in data
-            ? String((data as { message?: string }).message || "知识库上传失败")
-            : "知识库上传失败";
-        reject(new Error(message));
-        return;
-      }
-
-      onProgress?.(100);
-      resolve(data as { documentId: string; filename: string; size: number; indexed?: boolean });
     };
 
+    xhr.onerror = () => reject(new Error(KNOWLEDGE_ERRORS.REQUEST_FAILED));
     xhr.send(form);
   });
 }
 
-export async function deleteKnowledge(params: {
-  documentId: string;
-  kbId?: string;
-}): Promise<void> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/knowledge/delete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify({ documentId: params.documentId, kbId: params.kbId }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库删除失败");
-  }
-}
+// ============================================================
+// Knowledge Graph API
+// ============================================================
 
-export async function listKnowledgeChunks(params: {
-  documentId: string;
-  kbId?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<KnowledgeChunksResponse> {
-  const url = buildGatewayUrl("/api/knowledge/chunks");
-  url.searchParams.set("documentId", params.documentId);
-  if (params.kbId) url.searchParams.set("kbId", params.kbId);
-  if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
-  if (typeof params.offset === "number") url.searchParams.set("offset", String(params.offset));
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "分块列表加载失败");
-  }
-  return data as KnowledgeChunksResponse;
-}
+export type KnowledgeGraphStats = {
+  totalEntities: number;
+  totalRelations: number;
+  entityTypes: Record<string, number>;
+  topKeywords: string[];
+  topEntities: Array<{ name: string; degree: number }>;
+};
 
-export async function getKnowledgeChunk(
-  chunkId: string,
-  kbId?: string,
-): Promise<KnowledgeChunkDetailResponse> {
-  const url = buildGatewayUrl("/api/knowledge/chunk");
-  url.searchParams.set("chunkId", chunkId);
-  if (kbId) url.searchParams.set("kbId", kbId);
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "分块详情加载失败");
-  }
-  return data as KnowledgeChunkDetailResponse;
-}
+export type KnowledgeGraphBuildTask = {
+  id: string;
+  kb_id: string;
+  document_id: string;
+  status: "pending" | "running" | "success" | "failed";
+  progress: number;
+  total_chunks: number;
+  processed_chunks: number;
+  entities_count: number;
+  relations_count: number;
+  error?: string;
+  started_at?: number;
+  completed_at?: number;
+  created_at: number;
+};
 
-export async function getKnowledgeSettings(): Promise<KnowledgeSettingsResponse> {
-  const url = buildGatewayUrl("/api/knowledge/settings");
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "设置加载失败");
-  }
-  return data as KnowledgeSettingsResponse;
-}
+export type KnowledgeGraphSearchResult = {
+  entities: Array<{
+    id: string;
+    name: string;
+    type: string | null;
+    description: string | null;
+    score: number;
+  }>;
+  relations: Array<{
+    id: string;
+    sourceName: string;
+    targetName: string;
+    keywords: string[];
+    description: string | null;
+  }>;
+  chunks: Array<{
+    id: string;
+    documentId: string;
+    text: string;
+    score: number;
+  }>;
+};
 
-export async function getKnowledgeBaseSettings(
-  kbId: string,
-): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
-  const url = buildGatewayUrl("/api/knowledge/base/settings");
-  url.searchParams.set("kbId", kbId);
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库设置加载失败");
-  }
-  return data as { kbId: string; settings: KnowledgeBaseRuntimeSettings };
-}
-
-export async function updateKnowledgeBaseSettings(params: {
+/**
+ * 构建知识图谱
+ */
+export async function buildKnowledgeGraph(params: {
   kbId: string;
-  settings: Partial<KnowledgeBaseRuntimeSettings>;
-}): Promise<{ kbId: string; settings: KnowledgeBaseRuntimeSettings }> {
-  const url = buildGatewayUrl("/api/knowledge/base/settings");
-  const response = await fetch(url.toString(), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "知识库设置更新失败");
-  }
-  return data as { kbId: string; settings: KnowledgeBaseRuntimeSettings };
+  documentId: string;
+}): Promise<{ taskId: string }> {
+  return callKnowledgeWs("knowledge.graph.build", params);
 }
 
-export async function listKnowledgeTags(): Promise<{ tags: KnowledgeBaseTag[] }> {
-  const url = buildGatewayUrl("/api/knowledge/tags");
-  const response = await fetch(url.toString(), { headers: buildHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "标签列表加载失败");
-  }
-  return data as { tags: KnowledgeBaseTag[] };
+/**
+ * 批量构建知识图谱（构建KB中所有文档）
+ */
+export async function buildAllKnowledgeGraphs(params: {
+  kbId: string;
+}): Promise<{ taskIds: string[]; documentCount: number }> {
+  return callKnowledgeWs("knowledge.graph.buildAll", params);
 }
 
-export async function createKnowledgeTag(params: {
-  name: string;
-  color?: string;
-}): Promise<KnowledgeBaseTag> {
-  const url = buildGatewayUrl("/api/knowledge/tags");
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "创建标签失败");
-  }
-  return data as KnowledgeBaseTag;
+/**
+ * 获取图谱构建状态
+ */
+export async function getKnowledgeGraphStatus(params: {
+  taskId: string;
+}): Promise<KnowledgeGraphBuildTask> {
+  return callKnowledgeWs("knowledge.graph.status", params);
 }
 
-export async function updateKnowledgeTag(params: {
-  tagId: string;
-  name?: string;
-  color?: string;
-}): Promise<KnowledgeBaseTag> {
-  const url = buildGatewayUrl("/api/knowledge/tags");
-  const response = await fetch(url.toString(), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "更新标签失败");
-  }
-  return data as KnowledgeBaseTag;
+/**
+ * 获取图谱统计信息
+ */
+export async function getKnowledgeGraphStats(params: {
+  kbId: string;
+}): Promise<KnowledgeGraphStats> {
+  return callKnowledgeWs("knowledge.graph.stats", params);
 }
 
-export async function deleteKnowledgeTag(tagId: string): Promise<{ success: boolean }> {
-  const url = buildGatewayUrl("/api/knowledge/tags/delete");
-  const response = await fetch(url.toString(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify({ tagId }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "删除标签失败");
-  }
-  return data as { success: boolean };
-}
-
-export async function updateKnowledgeSettings(params: {
-  vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
-  graph?: Partial<KnowledgeSettingsResponse["graph"]>;
-}): Promise<KnowledgeSettingsResponse> {
-  const url = buildGatewayUrl("/api/knowledge/settings");
-  const response = await fetch(url.toString(), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify(params),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || "设置更新失败");
-  }
-  return data as KnowledgeSettingsResponse;
-}
-
-export async function knowledgeSearch(params: {
+/**
+ * 搜索知识图谱
+ */
+export async function searchKnowledgeGraph(params: {
+  kbId?: string;
   query: string;
+  mode?: "local" | "global" | "hybrid" | "naive";
+  topK?: number;
+}): Promise<KnowledgeGraphSearchResult> {
+  return callKnowledgeWs("knowledge.graph.search", params);
+}
+
+/**
+ * 清空知识图谱
+ */
+export async function clearKnowledgeGraph(params: { kbId: string }): Promise<{ success: boolean }> {
+  return callKnowledgeWs("knowledge.graph.clear", params);
+}
+
+/**
+ * 获取图谱数据（用于可视化）
+ */
+export type KnowledgeGraphData = {
+  nodes: Array<{
+    id: string;
+    name: string;
+    type: string | null;
+    description?: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    keywords: string[];
+  }>;
+};
+
+export async function getKnowledgeGraphData(params: {
+  kbId: string;
   limit?: number;
-  sessionKey?: string;
-  kbId?: string | null;
-}): Promise<KnowledgeSearchResponse> {
-  const response = await fetch(`${resolveGatewayBaseUrl()}/api/tools/invoke`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildHeaders(),
-    },
-    body: JSON.stringify({
-      tool: "knowledge_search",
-      args: {
-        query: params.query,
-        limit: params.limit,
-        kbId: params.kbId ?? undefined,
-      },
-      sessionKey: params.sessionKey,
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error?.message || "检索失败");
-  }
-  return data.result as KnowledgeSearchResponse;
+}): Promise<KnowledgeGraphData> {
+  return callKnowledgeWs("knowledge.graph.data", params);
 }

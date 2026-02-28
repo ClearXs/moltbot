@@ -55,7 +55,7 @@ export function AgentMessage({
           <div className="px-lg py-md border-b border-border-light">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-sm">
-                <span className="text-sm font-medium text-text-primary">企业运营助手</span>
+                <span className="text-sm font-medium text-text-primary">Hovi</span>
                 <span className={`flex items-center gap-xs text-xs ${statusColor}`}>
                   {(status === "thinking" || status === "executing") && (
                     <RotateCw className="w-3 h-3 animate-spin" />

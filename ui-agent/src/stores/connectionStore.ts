@@ -4,8 +4,8 @@
  */
 
 import { create } from "zustand";
-import type { ConnectionStatus, DevicePairRequestedPayload } from "../types/clawdbot";
 import { ClawdbotWebSocketClient } from "../services/clawdbot-websocket";
+import type { ConnectionStatus, DevicePairRequestedPayload } from "../types/clawdbot";
 
 interface ConnectionStore {
   // State
@@ -59,13 +59,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
     // Already connected
     if (status === "connected" && wsClient?.isConnected()) {
-      console.log("[ConnectionStore] Already connected");
       return;
     }
 
     // Connecting in progress
     if (status === "connecting") {
-      console.log("[ConnectionStore] Connection already in progress");
       return;
     }
 
@@ -75,19 +73,17 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       // Create new client if doesn't exist
       let client = wsClient;
       if (!client) {
-        console.log("[ConnectionStore] Creating new WebSocket client");
         client = new ClawdbotWebSocketClient({
           url: WS_URL,
           token: gatewayToken,
           clientId: CLIENT_ID,
           clientVersion: CLIENT_VERSION,
           locale: "zh-CN",
-          autoReconnect: false,
+          autoReconnect: true,
           maxReconnectAttempts: 10,
           reconnectDelay: 1000,
 
           onConnected: () => {
-            console.log("[ConnectionStore] Connected successfully");
             set({
               status: "connected",
               lastError: null,
@@ -99,7 +95,6 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
           },
 
           onDisconnected: () => {
-            console.log("[ConnectionStore] Disconnected");
             const { status: currentStatus } = get();
             // Only update status if not manually disconnected
             if (currentStatus !== "disconnected") {

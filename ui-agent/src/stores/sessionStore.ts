@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { GatewaySessionRow, SessionsListResult } from "@/types/clawdbot";
 import { useConnectionStore } from "@/stores/connectionStore";
+import type { GatewaySessionRow, SessionsListResult } from "@/types/clawdbot";
 
 type SessionDialogAction = "rename" | "reset" | "delete" | "details";
 
@@ -214,9 +214,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   createSession: async (label) => {
     const wsClient = useConnectionStore.getState().wsClient;
-    if (!wsClient || !wsClient.isConnected()) return null;
+    const connectionStatus = useConnectionStore.getState().status;
+    if (!wsClient || !wsClient.isConnected()) {
+      console.warn("[sessionStore] createSession failed: not connected, status:", connectionStatus);
+      return null;
+    }
     const key = buildSessionKey();
     try {
+      // Store label in local overrides (webchat clients cannot use sessions.patch)
       if (label?.trim()) {
         set((state) => {
           const nextOverrides = { ...state.labelOverrides, [key]: label.trim() };
@@ -225,9 +230,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         });
       }
       await wsClient.sendRequest("sessions.reset", { key });
-      if (label?.trim()) {
-        await wsClient.sendRequest("sessions.patch", { key, label: label.trim() });
-      }
       await get().fetchSessions();
       get().selectSession(key);
       return key;

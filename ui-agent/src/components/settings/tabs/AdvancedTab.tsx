@@ -27,7 +27,11 @@ function deepGet(obj: Record<string, unknown>, path: string): unknown {
   }, obj);
 }
 
-function deepSet(obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+function deepSet(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): Record<string, unknown> {
   const keys = path.split(".");
   const result = structuredClone(obj);
   let current: Record<string, unknown> = result;
@@ -83,7 +87,7 @@ function FieldRow({
 /*  Main component                                                       */
 /* ------------------------------------------------------------------ */
 
-export function AdvancedTab() {
+export function AdvancedTab({ onClose }: { onClose?: () => void }) {
   const { config, isLoadingConfig, isSavingConfig, configError, loadConfig, patchConfig } =
     useSettingsStore();
   const { addToast } = useToastStore();
@@ -99,10 +103,7 @@ export function AdvancedTab() {
     }
   }, [config]);
 
-  const getValue = useCallback(
-    (path: string): unknown => deepGet(form, path),
-    [form],
-  );
+  const getValue = useCallback((path: string): unknown => deepGet(form, path), [form]);
 
   const setValue = useCallback((path: string, value: unknown) => {
     setForm((prev) => deepSet(prev, path, value));
@@ -143,10 +144,20 @@ export function AdvancedTab() {
     const result = await patchConfig(patch);
     if (result.ok) {
       setDirty(false);
-      addToast({
-        title: "高级设置已保存",
-        description: result.needsRestart ? "部分更改需要重启网关才能生效" : "设置已成功更新",
-      });
+      if (result.needsRestart) {
+        addToast({
+          title: "配置已保存，网关即将重启",
+          description: "设置页面将关闭，请稍候重新打开",
+        });
+        setTimeout(() => {
+          onClose?.();
+        }, 1500);
+      } else {
+        addToast({
+          title: "高级设置已保存",
+          description: "设置已成功更新",
+        });
+      }
     } else {
       addToast({
         title: "保存失败",
@@ -188,6 +199,38 @@ export function AdvancedTab() {
 
   return (
     <div className="space-y-0">
+      {/* ---- 顶部操作栏 ---- */}
+      <div className="flex items-center justify-between mb-4 pb-4 border-b border-border-light">
+        <div>
+          {configError && (
+            <p className="text-xs text-error flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              {configError}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReset}
+            disabled={!dirty || isSavingConfig}
+          >
+            重置
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
+            {isSavingConfig ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                保存中...
+              </>
+            ) : (
+              "保存高级设置"
+            )}
+          </Button>
+        </div>
+      </div>
+
       {/* ---- Gateway 配置 ---- */}
       <section>
         <SectionHeader icon={<Server className="w-4 h-4" />} title="Gateway 配置" />
@@ -288,7 +331,10 @@ export function AdvancedTab() {
               max={23}
               value={numberVal("session.reset.atHour") ?? ""}
               onChange={(e) =>
-                setValue("session.reset.atHour", e.target.value ? Number(e.target.value) : undefined)
+                setValue(
+                  "session.reset.atHour",
+                  e.target.value ? Number(e.target.value) : undefined,
+                )
               }
               placeholder="4"
               className="h-8 text-xs"
@@ -397,32 +443,6 @@ export function AdvancedTab() {
           </FieldRow>
         )}
       </section>
-
-      {/* ---- 底部操作栏 ---- */}
-      <div className="sticky bottom-0 bg-background pt-4 pb-2 border-t border-border-light mt-6 flex items-center justify-between">
-        {configError && (
-          <p className="text-xs text-error flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5" />
-            {configError}
-          </p>
-        )}
-        <div className="flex-1" />
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleReset} disabled={!dirty || isSavingConfig}>
-            重置
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={!dirty || isSavingConfig}>
-            {isSavingConfig ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                保存中...
-              </>
-            ) : (
-              "保存高级设置"
-            )}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

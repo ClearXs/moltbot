@@ -130,6 +130,7 @@ export interface ConnectParams {
     platform: "web" | "ios" | "android" | "macos" | "linux";
     mode: "webchat" | "cli" | "ui" | "backend" | "node" | "probe" | "test";
   };
+  caps?: string[];
   role: "operator" | "node";
   scopes: string[];
   auth?: {
@@ -179,7 +180,6 @@ export interface AgentParams {
   sessionKey?: string;
   deliver?: boolean;
   idempotencyKey: string;
-  turnId?: string;
   thinking?: "low" | "default" | "medium" | "extended";
   timeout?: number;
   attachments?: Attachment[];

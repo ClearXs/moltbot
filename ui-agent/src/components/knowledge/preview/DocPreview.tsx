@@ -176,10 +176,8 @@ export function DocPreview({ detail, highlightKeywords = [] }: DocPreviewProps) 
       // 更新原始内容
       setTextContent(formatted);
       setEditedJsonContent(formatted);
-      console.log("JSON 保存成功");
       // TODO: 添加成功提示 toast
     } catch (err) {
-      console.error("保存 JSON 失败:", err);
       alert(err instanceof Error ? err.message : "保存失败");
     } finally {
       setIsSavingJson(false);

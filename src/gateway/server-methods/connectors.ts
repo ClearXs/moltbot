@@ -37,8 +37,37 @@ type OAuthPending = {
   expiresAt: number;
 };
 
+type OAuthProviderConfig = {
+  authorizeUrl?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  extraAuthorizeParams?: Record<string, string>;
+  extraTokenParams?: Record<string, string>;
+};
+
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const oauthStateStore = new Map<string, OAuthPending>();
+
+const DEFAULT_OAUTH_PROVIDER_CONFIGS: Record<string, OAuthProviderConfig> = {
+  github: {
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+    tokenUrl: "https://github.com/login/oauth/access_token",
+  },
+  google: {
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+  },
+  slack: {
+    authorizeUrl: "https://slack.com/oauth/v2/authorize",
+    tokenUrl: "https://slack.com/api/oauth.v2.access",
+  },
+  notion: {
+    authorizeUrl: "https://api.notion.com/v1/oauth/authorize",
+    tokenUrl: "https://api.notion.com/v1/oauth/token",
+  },
+};
 
 const BUILTIN_CONNECTORS: BuiltinConnector[] = [
   {
@@ -142,10 +171,94 @@ function getConnectorSessions(cfg: OpenClawConfig): Record<string, { connectorId
   return sessions as Record<string, { connectorIds?: string[] }>;
 }
 
+function getConnectorOAuthProviders(cfg: OpenClawConfig): Record<string, Record<string, unknown>> {
+  const connectors = cfg.connectors;
+  if (!connectors || typeof connectors !== "object") {
+    return {};
+  }
+  const oauthProviders = connectors.oauthProviders;
+  if (!oauthProviders || typeof oauthProviders !== "object") {
+    return {};
+  }
+  return oauthProviders as Record<string, Record<string, unknown>>;
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const pairs = Object.entries(value as Record<string, unknown>)
+    .filter(([key, entry]) => key.trim().length > 0 && typeof entry === "string")
+    .map(([key, entry]) => [key.trim(), entry]);
+  if (pairs.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(pairs);
+}
+
+function normalizeOAuthProviderConfig(
+  value: unknown,
+  fallback?: OAuthProviderConfig,
+): OAuthProviderConfig {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const authorizeUrl =
+    typeof raw.authorizeUrl === "string" ? raw.authorizeUrl.trim() : (fallback?.authorizeUrl ?? "");
+  const tokenUrl =
+    typeof raw.tokenUrl === "string" ? raw.tokenUrl.trim() : (fallback?.tokenUrl ?? "");
+  const clientId =
+    typeof raw.clientId === "string" ? raw.clientId.trim() : (fallback?.clientId ?? "");
+  const clientSecret =
+    typeof raw.clientSecret === "string" ? raw.clientSecret.trim() : (fallback?.clientSecret ?? "");
+
+  const rawScopes = Array.isArray(raw.scopes)
+    ? raw.scopes
+    : Array.isArray(fallback?.scopes)
+      ? fallback.scopes
+      : [];
+  const scopes = rawScopes
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+
+  const extraAuthorizeParams =
+    normalizeStringRecord(raw.extraAuthorizeParams) ?? fallback?.extraAuthorizeParams;
+  const extraTokenParams =
+    normalizeStringRecord(raw.extraTokenParams) ?? fallback?.extraTokenParams;
+
+  const result: OAuthProviderConfig = {};
+  if (authorizeUrl) {
+    result.authorizeUrl = authorizeUrl;
+  }
+  if (tokenUrl) {
+    result.tokenUrl = tokenUrl;
+  }
+  if (clientId) {
+    result.clientId = clientId;
+  }
+  if (clientSecret) {
+    result.clientSecret = clientSecret;
+  }
+  if (scopes.length > 0) {
+    result.scopes = scopes;
+  }
+  if (extraAuthorizeParams) {
+    result.extraAuthorizeParams = extraAuthorizeParams;
+  }
+  if (extraTokenParams) {
+    result.extraTokenParams = extraTokenParams;
+  }
+  return result;
+}
+
 function ensureConnectorRoot(cfg: OpenClawConfig): {
   connectors: NonNullable<OpenClawConfig["connectors"]>;
   entries: Record<string, Record<string, unknown>>;
   sessions: Record<string, { connectorIds?: string[] }>;
+  oauthProviders: Record<string, Record<string, unknown>>;
 } {
   const currentConnectors =
     cfg.connectors && typeof cfg.connectors === "object" ? cfg.connectors : {};
@@ -157,14 +270,20 @@ function ensureConnectorRoot(cfg: OpenClawConfig): {
     currentConnectors.sessions && typeof currentConnectors.sessions === "object"
       ? (currentConnectors.sessions as Record<string, { connectorIds?: string[] }>)
       : {};
+  const oauthProviders =
+    currentConnectors.oauthProviders && typeof currentConnectors.oauthProviders === "object"
+      ? (currentConnectors.oauthProviders as Record<string, Record<string, unknown>>)
+      : {};
   return {
     connectors: {
       ...currentConnectors,
       entries,
       sessions,
+      oauthProviders,
     },
     entries,
     sessions,
+    oauthProviders,
   };
 }
 
@@ -225,7 +344,7 @@ function normalizeCallbackUrl(value: string): string | null {
 }
 
 async function exchangeOAuthCode(params: {
-  providerConfig: Record<string, unknown>;
+  providerConfig: OAuthProviderConfig;
   code: string;
   callbackUrl: string;
 }): Promise<Record<string, unknown>> {
@@ -295,9 +414,16 @@ export const connectorsHandlers: GatewayRequestHandlers = {
 
     const cfg = loadConfig();
     const entries = getConnectorEntries(cfg);
+    const oauthProviders = getConnectorOAuthProviders(cfg);
     const builtins = BUILTIN_CONNECTORS.map((builtin) => {
       const stored = entries[builtin.id];
       const status = resolveConnectorStatus(stored);
+      const oauthProviderConfig = builtin.oauthProvider
+        ? normalizeOAuthProviderConfig(
+            oauthProviders[builtin.oauthProvider],
+            DEFAULT_OAUTH_PROVIDER_CONFIGS[builtin.oauthProvider],
+          )
+        : undefined;
       return {
         id: builtin.id,
         type: builtin.type,
@@ -309,6 +435,8 @@ export const connectorsHandlers: GatewayRequestHandlers = {
         enabled: typeof stored?.enabled === "boolean" ? stored.enabled : true,
         authMode:
           typeof stored?.authMode === "string" ? stored.authMode : (builtin.authMode ?? "none"),
+        oauthProvider: builtin.oauthProvider,
+        oauthProviderConfig,
         oauth: {
           connected: status === "connected",
           connectedAt:
@@ -379,7 +507,7 @@ export const connectorsHandlers: GatewayRequestHandlers = {
     }
 
     const cfg = loadConfig();
-    const { connectors, entries } = ensureConnectorRoot(cfg);
+    const { connectors, entries, oauthProviders } = ensureConnectorRoot(cfg);
     const current = entries[id] && typeof entries[id] === "object" ? { ...entries[id] } : {};
 
     current.type = p.type;
@@ -416,12 +544,26 @@ export const connectorsHandlers: GatewayRequestHandlers = {
         }
         current.customMcp = p.config;
       } else {
-        current.config = p.config;
+        const builtin = BUILTIN_CONNECTORS.find((item) => item.id === id);
+        if (builtin?.oauthProvider) {
+          const config = p.config.oauthProvider;
+          if (config && typeof config === "object" && !Array.isArray(config)) {
+            const normalized = normalizeOAuthProviderConfig(
+              config,
+              normalizeOAuthProviderConfig(
+                oauthProviders[builtin.oauthProvider],
+                DEFAULT_OAUTH_PROVIDER_CONFIGS[builtin.oauthProvider],
+              ),
+            );
+            oauthProviders[builtin.oauthProvider] = normalized as Record<string, unknown>;
+          }
+        }
       }
     }
 
     entries[id] = current;
     connectors.entries = entries;
+    connectors.oauthProviders = oauthProviders;
 
     await writeConfigFile({
       ...cfg,
@@ -506,23 +648,10 @@ export const connectorsHandlers: GatewayRequestHandlers = {
     }
 
     const cfg = loadConfig();
-    const providerConfig =
-      cfg.connectors?.oauthProviders && typeof cfg.connectors.oauthProviders === "object"
-        ? (cfg.connectors.oauthProviders[builtin.oauthProvider] as
-            | Record<string, unknown>
-            | undefined)
-        : undefined;
-    if (!providerConfig) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.UNAVAILABLE,
-          `missing connectors.oauthProviders.${builtin.oauthProvider} configuration`,
-        ),
-      );
-      return;
-    }
+    const providerConfig = normalizeOAuthProviderConfig(
+      getConnectorOAuthProviders(cfg)[builtin.oauthProvider],
+      DEFAULT_OAUTH_PROVIDER_CONFIGS[builtin.oauthProvider],
+    );
 
     const authorizeUrlRaw =
       typeof providerConfig.authorizeUrl === "string" ? providerConfig.authorizeUrl.trim() : "";
@@ -623,23 +752,10 @@ export const connectorsHandlers: GatewayRequestHandlers = {
     }
 
     const cfg = loadConfig();
-    const providerConfig =
-      cfg.connectors?.oauthProviders && typeof cfg.connectors.oauthProviders === "object"
-        ? (cfg.connectors.oauthProviders[stateRecord.provider] as
-            | Record<string, unknown>
-            | undefined)
-        : undefined;
-    if (!providerConfig) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.UNAVAILABLE,
-          `missing OAuth provider config: ${stateRecord.provider}`,
-        ),
-      );
-      return;
-    }
+    const providerConfig = normalizeOAuthProviderConfig(
+      getConnectorOAuthProviders(cfg)[stateRecord.provider],
+      DEFAULT_OAUTH_PROVIDER_CONFIGS[stateRecord.provider],
+    );
 
     let tokenPayload: Record<string, unknown>;
     try {

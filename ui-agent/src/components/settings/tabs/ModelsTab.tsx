@@ -17,6 +17,8 @@ import {
   Save,
   X,
   AlertTriangle,
+  Check,
+  Star,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -53,7 +55,7 @@ interface ModelCost {
 
 interface ModelDefinition {
   id: string;
-  name: string;
+  name?: string;
   api?: string;
   reasoning?: boolean;
   input?: string[];
@@ -367,6 +369,207 @@ function RemoveProviderDialog({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Add Model Dialog                                                      */
+/* ------------------------------------------------------------------ */
+
+function AddModelDialog({
+  open,
+  onOpenChange,
+  onAdd,
+  catalog,
+  providerName,
+  existingModelIds,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdd: (model: ModelDefinition) => void;
+  catalog: ModelCatalogEntry[];
+  providerName: string;
+  existingModelIds: string[];
+}) {
+  const [mode, setMode] = useState<"select" | "manual">("select");
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [modelId, setModelId] = useState("");
+  const [name, setName] = useState("");
+  const [contextWindow, setContextWindow] = useState("");
+  const [maxTokens, setMaxTokens] = useState("");
+  const [reasoning, setReasoning] = useState(false);
+
+  // 获取该提供商的可用模型（排除已添加的）
+  const availableModels = useMemo(() => {
+    return catalog
+      .filter((m) => m.provider.toLowerCase() === providerName.toLowerCase())
+      .filter((m) => !existingModelIds.includes(m.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [catalog, providerName, existingModelIds]);
+
+  const canSubmit = mode === "select" ? selectedModel !== "" : modelId.trim() !== "";
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+
+    if (mode === "select") {
+      // 从目录中选择
+      const catalogModel = availableModels.find((m) => m.id === selectedModel);
+      if (catalogModel) {
+        onAdd({
+          id: catalogModel.id,
+          name: catalogModel.name,
+          contextWindow: catalogModel.contextWindow,
+          reasoning: catalogModel.reasoning,
+        });
+      }
+    } else {
+      // 手动填写
+      onAdd({
+        id: modelId.trim(),
+        name: name.trim() ? name.trim() : undefined,
+        contextWindow: contextWindow ? parseInt(contextWindow, 10) : undefined,
+        maxTokens: maxTokens ? parseInt(maxTokens, 10) : undefined,
+        reasoning: reasoning || undefined,
+      });
+    }
+
+    // Reset form
+    setSelectedModel("");
+    setModelId("");
+    setName("");
+    setContextWindow("");
+    setMaxTokens("");
+    setReasoning(false);
+    setMode("select");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[28rem]">
+        <DialogHeader>
+          <DialogTitle>添加模型</DialogTitle>
+          <DialogDescription>从模型目录选择或手动添加模型。</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* 模式切换 */}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={mode === "select" ? "default" : "outline"}
+              onClick={() => setMode("select")}
+              className="flex-1"
+            >
+              从目录选择
+            </Button>
+            <Button
+              size="sm"
+              variant={mode === "manual" ? "default" : "outline"}
+              onClick={() => setMode("manual")}
+              className="flex-1"
+            >
+              手动填写
+            </Button>
+          </div>
+
+          {mode === "select" ? (
+            <div>
+              <label className="text-xs text-text-secondary mb-1 block">
+                选择模型 <span className="text-error">*</span>
+              </label>
+              {availableModels.length === 0 ? (
+                <p className="text-xs text-text-tertiary py-2">
+                  该提供商没有可用模型，或已全部添加
+                </p>
+              ) : (
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="h-8 w-full rounded-md border border-border-light bg-background px-2 text-xs"
+                >
+                  <option value="">请选择模型...</option>
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.id}
+                      {m.contextWindow ? ` (${Math.round(m.contextWindow / 1000)}K)` : ""}
+                      {m.reasoning ? " 🧠" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-xs text-text-secondary mb-1 block">
+                  模型 ID <span className="text-error">*</span>
+                </label>
+                <Input
+                  value={modelId}
+                  onChange={(e) => setModelId(e.target.value)}
+                  placeholder="gpt-4o, claude-3-opus"
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-text-secondary mb-1 block">显示名称</label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="GPT-4o (可选)"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-text-secondary mb-1 block">上下文窗口</label>
+                  <Input
+                    value={contextWindow}
+                    onChange={(e) => setContextWindow(e.target.value.replace(/\D/g, ""))}
+                    placeholder="128000"
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-text-secondary mb-1 block">最大输出</label>
+                  <Input
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(e.target.value.replace(/\D/g, ""))}
+                    placeholder="4096"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="reasoning"
+                  checked={reasoning}
+                  onChange={(e) => setReasoning(e.target.checked)}
+                  className="rounded border-border-light"
+                />
+                <label htmlFor="reasoning" className="text-xs text-text-secondary">
+                  推理模型 (Reasoning)
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
+            添加
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Provider Card (with editable Base URL)                              */
 /* ------------------------------------------------------------------ */
 
@@ -376,12 +579,20 @@ function ProviderCard({
   onApiKeyChange,
   onBaseUrlChange,
   onRemove,
+  currentDefaultModel,
+  onSetDefault,
+  onAddFallback,
+  onAddModel,
 }: {
   name: string;
   provider: ModelProvider;
   onApiKeyChange: (key: string) => void;
   onBaseUrlChange: (url: string) => void;
   onRemove: () => void;
+  currentDefaultModel?: string;
+  onSetDefault?: (modelId: string) => void;
+  onAddFallback?: (modelId: string) => void;
+  onAddModel?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingBaseUrl, setEditingBaseUrl] = useState(false);
@@ -520,11 +731,89 @@ function ProviderCard({
                 模型列表 ({provider.models.length})
               </label>
               <div className="bg-surface-subtle rounded-md divide-y divide-border-light max-h-[200px] overflow-y-auto">
-                {provider.models.map((model) => (
-                  <ModelRow key={model.id} model={model} />
-                ))}
+                {provider.models.map((model) => {
+                  const isDefault = currentDefaultModel === model.id;
+                  return (
+                    <div
+                      key={model.id}
+                      className="flex items-center justify-between py-2 px-3 text-xs hover:bg-surface-hover"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="font-mono text-text-primary truncate">{model.id}</span>
+                        {model.reasoning && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                            reasoning
+                          </span>
+                        )}
+                        {isDefault && (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Check className="w-2.5 h-2.5" /> 主模型
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {!isDefault && onSetDefault && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-1.5 text-[10px] text-text-tertiary hover:text-primary"
+                            onClick={() => onSetDefault(model.id)}
+                            title="设为主模型"
+                          >
+                            <Star className="w-3 h-3 mr-1" />
+                            设为主
+                          </Button>
+                        )}
+                        {!isDefault && onAddFallback && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-1.5 text-[10px] text-text-tertiary hover:text-primary"
+                            onClick={() => onAddFallback(model.id)}
+                            title="添加为备用模型"
+                          >
+                            <Plus className="w-3 h-3 mr-1" />
+                            备用
+                          </Button>
+                        )}
+                        <div className="flex items-center gap-3 flex-shrink-0 text-text-tertiary">
+                          {model.contextWindow && (
+                            <span title="Context window">
+                              {model.contextWindow >= 1000
+                                ? `${Math.round(model.contextWindow / 1000)}K`
+                                : model.contextWindow}
+                            </span>
+                          )}
+                          {model.maxTokens && (
+                            <span title="Max output tokens">
+                              max{" "}
+                              {model.maxTokens >= 1000
+                                ? `${Math.round(model.maxTokens / 1000)}K`
+                                : model.maxTokens}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
+          )}
+
+          {onAddModel && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3 w-full text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddModel();
+              }}
+            >
+              <Plus className="w-3 h-3 mr-1" />
+              添加模型
+            </Button>
           )}
         </div>
       )}
@@ -536,7 +825,7 @@ function ProviderCard({
 /*  Main component                                                       */
 /* ------------------------------------------------------------------ */
 
-export function ModelsTab() {
+export function ModelsTab({ onClose }: { onClose?: () => void }) {
   const { addToast } = useToastStore();
 
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
@@ -548,7 +837,13 @@ export function ModelsTab() {
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
 
+  // 当前默认模型和备用模型
+  const [currentDefaultModel, setCurrentDefaultModel] = useState<string>("");
+  const [currentFallbackModels, setCurrentFallbackModels] = useState<string[]>([]);
+
   const [addProviderOpen, setAddProviderOpen] = useState(false);
+  const [addModelOpen, setAddModelOpen] = useState(false);
+  const [addModelProvider, setAddModelProvider] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [search, setSearch] = useState("");
@@ -587,6 +882,24 @@ export function ModelsTab() {
       const modelsProviders = (parsed?.models as Record<string, unknown>)?.providers;
       if (modelsProviders && typeof modelsProviders === "object") {
         setProviders(modelsProviders as ProvidersMap);
+      }
+      // 读取默认模型配置
+      const agentsDefaults = parsed?.agents?.defaults as Record<string, unknown> | undefined;
+      const modelConfig = agentsDefaults?.model;
+      if (typeof modelConfig === "string") {
+        setCurrentDefaultModel(modelConfig);
+        setCurrentFallbackModels([]);
+      } else if (modelConfig && typeof modelConfig === "object") {
+        setCurrentDefaultModel(((modelConfig as Record<string, unknown>).primary as string) || "");
+        const fallbacks = (modelConfig as Record<string, unknown>).fallbacks;
+        setCurrentFallbackModels(
+          Array.isArray(fallbacks)
+            ? fallbacks.filter((f): f is string => typeof f === "string")
+            : [],
+        );
+      } else {
+        setCurrentDefaultModel("");
+        setCurrentFallbackModels([]);
       }
     } catch (err) {
       setConfigError(err instanceof Error ? err.message : "加载配置失败");
@@ -662,6 +975,63 @@ export function ModelsTab() {
     [patchProvider, addToast],
   );
 
+  // 设置默认模型
+  const handleSetDefaultModel = useCallback(
+    async (modelId: string) => {
+      if (!wsClient || !configHash) return;
+      try {
+        const result = await wsClient.sendRequest<{ hash?: string }>("config.patch", {
+          raw: JSON.stringify({
+            agents: { defaults: { model: { primary: modelId, fallbacks: currentFallbackModels } } },
+          }),
+          baseHash: configHash,
+        });
+        if (result?.hash) {
+          setConfigHash(result.hash);
+          setCurrentDefaultModel(modelId);
+          addToast({ title: "已设置", description: `默认模型已设置为 ${modelId}` });
+        }
+      } catch (err) {
+        addToast({
+          title: "设置失败",
+          description: err instanceof Error ? err.message : "未知错误",
+          variant: "error",
+        });
+      }
+    },
+    [wsClient, configHash, currentFallbackModels, addToast],
+  );
+
+  // 添加备用模型
+  const handleAddFallbackModel = useCallback(
+    async (modelId: string) => {
+      if (!wsClient || !configHash) return;
+      const newFallbacks = [...currentFallbackModels, modelId];
+      try {
+        const result = await wsClient.sendRequest<{ hash?: string }>("config.patch", {
+          raw: JSON.stringify({
+            agents: {
+              defaults: { model: { primary: currentDefaultModel, fallbacks: newFallbacks } },
+            },
+          }),
+          baseHash: configHash,
+        });
+        if (result?.hash) {
+          setConfigHash(result.hash);
+          setCurrentFallbackModels(newFallbacks);
+          addToast({ title: "已添加", description: `${modelId} 已添加为备用模型` });
+        }
+      } catch (err) {
+        addToast({
+          title: "添加失败",
+          description: err instanceof Error ? err.message : "未知错误",
+          variant: "error",
+        });
+      }
+    },
+    [wsClient, configHash, currentDefaultModel, currentFallbackModels, addToast],
+  );
+
   const handleAddProvider = useCallback(
     async (name: string, data: Omit<ModelProvider, "models">) => {
       const payload: Record<string, unknown> = {
@@ -679,6 +1049,26 @@ export function ModelsTab() {
       }
     },
     [patchProvider, addToast],
+  );
+
+  const handleAddModel = useCallback(
+    async (providerName: string, model: ModelDefinition) => {
+      const provider = providers[providerName];
+      if (!provider) return;
+
+      const newModels = [...provider.models, model];
+      const ok = await patchProvider(providerName, { models: newModels });
+      if (ok) {
+        setProviders((prev) => ({
+          ...prev,
+          [providerName]: { ...prev[providerName], models: newModels },
+        }));
+        setAddModelOpen(false);
+        setAddModelProvider(null);
+        addToast({ title: "已添加", description: `模型 ${model.id} 已添加到 ${providerName}` });
+      }
+    },
+    [providers, patchProvider, addToast],
   );
 
   const handleRemoveProvider = useCallback(
@@ -779,6 +1169,13 @@ export function ModelsTab() {
                 onApiKeyChange={(key) => void handleApiKeyChange(pname, key)}
                 onBaseUrlChange={(url) => void handleBaseUrlChange(pname, url)}
                 onRemove={() => setRemoveTarget(pname)}
+                currentDefaultModel={currentDefaultModel}
+                onSetDefault={handleSetDefaultModel}
+                onAddFallback={handleAddFallbackModel}
+                onAddModel={() => {
+                  setAddModelProvider(pname);
+                  setAddModelOpen(true);
+                }}
               />
             ))}
           </div>
@@ -849,6 +1246,24 @@ export function ModelsTab() {
         onOpenChange={setAddProviderOpen}
         onAdd={(pname, data) => void handleAddProvider(pname, data)}
         existingNames={Object.keys(providers)}
+      />
+
+      <AddModelDialog
+        open={addModelOpen}
+        onOpenChange={(open) => {
+          setAddModelOpen(open);
+          if (!open) setAddModelProvider(null);
+        }}
+        onAdd={(model) => {
+          if (addModelProvider) {
+            void handleAddModel(addModelProvider, model);
+          }
+        }}
+        catalog={catalog}
+        providerName={addModelProvider || ""}
+        existingModelIds={
+          addModelProvider ? providers[addModelProvider]?.models.map((m) => m.id) || [] : []
+        }
       />
 
       {removeTarget && (

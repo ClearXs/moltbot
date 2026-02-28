@@ -29,7 +29,7 @@ export function ComputerPanel({ files, isOpen, onClose, fullscreen = false }: Co
         <div className="flex items-center justify-between p-md border-b border-border flex-shrink-0 sticky top-0 bg-surface z-10">
           <div className="flex items-center gap-sm">
             <Monitor className="w-5 h-5 text-primary" />
-            <span className="text-sm font-semibold text-text-primary">企业运营助手's Computer</span>
+            <span className="text-sm font-semibold text-text-primary">Hovi's Computer</span>
             <span className="text-xs text-text-tertiary">已生成 {files.length} 个文件</span>
           </div>
           <button

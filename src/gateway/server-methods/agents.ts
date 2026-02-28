@@ -27,6 +27,7 @@ import {
 } from "../../commands/agents.config.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import { resolveSessionTranscriptsDirForAgent } from "../../config/sessions/paths.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
 import {
@@ -43,6 +44,8 @@ import {
 } from "../protocol/index.js";
 import { listAgentsForGateway } from "../session-utils.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
+
+const log = createSubsystemLogger("agents-ws");
 
 const BOOTSTRAP_FILE_NAMES = [
   DEFAULT_AGENTS_FILENAME,
@@ -325,6 +328,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
 
     const model = resolveOptionalStringParam(params.model);
     const avatar = resolveOptionalStringParam(params.avatar);
+    const activated = typeof params.activated === "boolean" ? params.activated : undefined;
 
     const nextConfig = applyAgentConfig(cfg, {
       agentId,
@@ -333,6 +337,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         : {}),
       ...(workspaceDir ? { workspace: workspaceDir } : {}),
       ...(model ? { model } : {}),
+      ...(activated !== undefined ? { activated } : {}),
     });
 
     await writeConfigFile(nextConfig);
@@ -525,5 +530,84 @@ export const agentsHandlers: GatewayRequestHandlers = {
       },
       undefined,
     );
+  },
+
+  // 上传任意文件到代理工作区（不受文件名限制）
+  "agents.files.upload": async ({ params, respond }) => {
+    try {
+      const p = params as {
+        agentId?: string;
+        filename: string;
+        content: string;
+        mimeType?: string;
+      };
+
+      const cfg = loadConfig();
+      const rawAgentId = p.agentId;
+      const agentId = resolveAgentIdOrError(
+        typeof rawAgentId === "string" || typeof rawAgentId === "number" ? String(rawAgentId) : "",
+        cfg,
+      );
+      if (!agentId) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "unknown agent id"));
+        return;
+      }
+
+      const filename = p.filename?.trim();
+      if (!filename) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing filename"));
+        return;
+      }
+
+      if (!p.content) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "missing content"));
+        return;
+      }
+
+      // 验证 filename，防止路径遍历攻击
+      const sanitizedFilename = filename.replace(/^(\.\.[/\\])+/, "").replace(/^[\\/]/, "");
+      if (sanitizedFilename.includes("..") || sanitizedFilename.includes("/\\")) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid filename"));
+        return;
+      }
+
+      // Decode base64 content
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = Buffer.from(p.content, "base64");
+      } catch {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid base64 content"));
+        return;
+      }
+
+      const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+      await fs.mkdir(workspaceDir, { recursive: true });
+      const filePath = path.join(workspaceDir, sanitizedFilename);
+
+      // 确保父目录存在
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+      await fs.writeFile(filePath, fileBuffer);
+      const meta = await statFile(filePath);
+
+      respond(true, {
+        ok: true,
+        agentId,
+        workspace: workspaceDir,
+        file: {
+          name: sanitizedFilename,
+          path: filePath,
+          size: meta?.size,
+          mimeType: p.mimeType || "application/octet-stream",
+        },
+      });
+    } catch (err) {
+      log.error(`agents.files.upload failed: ${String(err)}`);
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INTERNAL_ERROR, `文件上传失败: ${String(err)}`),
+      );
+    }
   },
 };

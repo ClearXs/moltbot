@@ -768,6 +768,38 @@ export const OpenClawSchema = z
       })
       .strict()
       .optional(),
+
+    // Token Quota Schema (金额单位: RMB)
+    quota: z
+      .object({
+        enabled: z.boolean().optional(),
+        users: z
+          .record(
+            z.string(),
+            z
+              .object({
+                limit: z.number().nonnegative().optional(),
+                spent: z.number().nonnegative().optional(),
+              })
+              .strict(),
+          )
+          .optional(),
+      })
+      .strict()
+      .optional(),
+
+    // Model Pricing Schema (价格单位: USD/百万tokens)
+    modelPricing: z
+      .record(
+        z.string(),
+        z
+          .object({
+            input: z.number().positive().optional(),
+            output: z.number().positive().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
   .superRefine((cfg, ctx) => {

@@ -111,7 +111,7 @@ export function createKnowledgeSearchTool(opts: { agentId: string }): AnyAgentTo
     label: "Knowledge Search",
     name: "knowledge_search",
     description:
-      "Search knowledge base documents using semantic search. Returns relevant document excerpts with their source filename and context. Use this to find information within uploaded documents.",
+      "Search knowledge base documents using hybrid search (vector + knowledge graph). Returns relevant document excerpts with their source filename and context, along with knowledge graph entities and relationships. Use this to find information within uploaded documents.",
     parameters: KnowledgeSearchSchema,
     execute: async (_toolCallId, params) => {
       const manager = getKnowledgeManager(opts.agentId);
@@ -124,65 +124,178 @@ export function createKnowledgeSearchTool(opts: { agentId: string }): AnyAgentTo
       const kbId = readStringParam(params, "kbId");
       const limit = readNumberParam(params, "limit", { integer: true }) ?? 5;
       const resolvedKbId = kbId ?? manager.getBase(opts.agentId)?.id;
-      const baseSettings = resolvedKbId
-        ? manager.getBaseSettings({ agentId: opts.agentId, kbId: resolvedKbId })
-        : {
-            retrieval: { mode: "hybrid", topK: 5, minScore: 0.35, hybridAlpha: 0.5 },
-          };
+
+      if (!resolvedKbId) {
+        throw new Error("No knowledge base specified or found");
+      }
+
+      const baseSettings = manager.getBaseSettings({ agentId: opts.agentId, kbId: resolvedKbId });
       const maxResults = Math.max(1, Math.min(limit, baseSettings.retrieval.topK));
 
-      // Note: This requires MemoryIndexManager to be available
-      // The search will be performed through the memory index
+      // Get knowledge base info for name
+      const kbInfo = manager.getBase({ agentId: opts.agentId, kbId: resolvedKbId });
+      const kbName = kbInfo?.name || "默认知识库";
+
+      // ============================================================
+      // 1. Vector Search (existing)
+      // ============================================================
       const { MemoryIndexManager } = await import("../../memory/manager.js");
       const memoryManager = await MemoryIndexManager.get({
         cfg: loadConfig(),
         agentId: opts.agentId,
       });
 
-      if (!memoryManager) {
-        throw new Error("Memory search is not configured for this agent");
+      let vectorResults: (typeof result)[] = [];
+      if (memoryManager) {
+        const rawResults = await memoryManager.search(query, {
+          maxResults: Math.max(maxResults, baseSettings.retrieval.topK),
+          minScore: 0,
+        });
+        const rankedResults = rankKnowledgeResults({
+          results: rawResults,
+          query,
+          retrievalMode: baseSettings.retrieval.mode,
+          minScore: baseSettings.retrieval.minScore,
+          hybridAlpha: baseSettings.retrieval.hybridAlpha,
+          maxResults,
+        });
+
+        vectorResults = rankedResults
+          .filter((result) => result.source === "knowledge")
+          .map((result) => {
+            const documentId = result.path.replace(/^knowledge\//, "");
+            const doc = manager.getDocument({
+              documentId,
+              agentId: opts.agentId,
+            });
+            return {
+              documentId,
+              kbId: resolvedKbId,
+              kbName,
+              filename: doc?.filename ?? documentId,
+              chunkId: result.id,
+              snippet: result.snippet,
+              score: result.score,
+              lines: `${result.startLine}-${result.endLine}`,
+              sourceType: "vector" as const,
+            };
+          });
       }
 
-      const rawResults = await memoryManager.search(query, {
-        maxResults: Math.max(maxResults, baseSettings.retrieval.topK),
-        minScore: 0,
-      });
-      const rankedResults = rankKnowledgeResults({
-        results: rawResults,
-        query,
-        retrievalMode: baseSettings.retrieval.mode,
-        minScore: baseSettings.retrieval.minScore,
-        hybridAlpha: baseSettings.retrieval.hybridAlpha,
-        maxResults,
-      });
+      // ============================================================
+      // 2. Graph Search (new)
+      // ============================================================
+      let graphResults: Array<{
+        documentId: string;
+        kbId: string;
+        kbName: string;
+        filename: string;
+        chunkId?: string;
+        snippet: string;
+        score: number;
+        sourceType: "graph_entity" | "graph_relation";
+        graphEntity?: {
+          id: string;
+          name: string;
+          type: string;
+          description: string;
+        };
+        graphRelation?: {
+          id: string;
+          sourceName: string;
+          targetName: string;
+          keywords: string[];
+        };
+      }> = [];
 
-      const formattedResults = rankedResults
-        .filter((result) => result.source === "knowledge")
-        .map((result) => {
-          const documentId = result.path.replace(/^knowledge\//, "");
-          const doc = manager.getDocument({
-            documentId,
+      let graphEntitiesCount = 0;
+      let graphRelationsCount = 0;
+
+      // Check if graph is enabled in settings
+      if (baseSettings.graph?.enabled) {
+        try {
+          const graphSearchResult = await manager.searchKnowledgeGraph({
             agentId: opts.agentId,
+            kbId: resolvedKbId,
+            query,
+            mode: "hybrid",
+            topK: maxResults,
           });
-          if (kbId && doc?.kb_id !== kbId) {
-            return null;
+
+          graphEntitiesCount = graphSearchResult.entities.length;
+          graphRelationsCount = graphSearchResult.relations.length;
+
+          // Convert graph entities to results
+          for (const entity of graphSearchResult.entities) {
+            // Find associated document
+            const entityRows = manager["db"]
+              ?.prepare("SELECT document_id FROM kg_entities WHERE id = ?")
+              .get(entity.id) as { document_id: string } | undefined;
+
+            const documentId = entityRows?.document_id || "";
+            const doc = documentId
+              ? manager.getDocument({ documentId, agentId: opts.agentId })
+              : null;
+
+            graphResults.push({
+              documentId,
+              kbId: resolvedKbId,
+              kbName,
+              filename: doc?.filename || documentId || "",
+              chunkId: entity.id,
+              snippet: entity.description || entity.name,
+              score: entity.score,
+              sourceType: "graph_entity",
+              graphEntity: {
+                id: entity.id,
+                name: entity.name,
+                type: entity.type || "其他",
+                description: entity.description || "",
+              },
+            });
           }
-          return {
-            documentId,
-            kbId: doc?.kb_id ?? null,
-            filename: doc?.filename ?? documentId,
-            chunkId: result.id,
-            snippet: result.snippet,
-            score: result.score,
-            lines: `${result.startLine}-${result.endLine}`,
-          };
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+          // Convert graph relations to results
+          for (const relation of graphSearchResult.relations) {
+            graphResults.push({
+              documentId: "",
+              kbId: resolvedKbId,
+              kbName,
+              filename: "",
+              chunkId: relation.id,
+              snippet: relation.description || `${relation.sourceName} → ${relation.targetName}`,
+              score: relation.score || 0,
+              sourceType: "graph_relation",
+              graphRelation: {
+                id: relation.id,
+                sourceName: relation.sourceName,
+                targetName: relation.targetName,
+                keywords: relation.keywords,
+              },
+            });
+          }
+        } catch (err) {
+          // Graph search failed, continue with vector results only
+          console.error("Graph search failed:", err);
+        }
+      }
+
+      // ============================================================
+      // 3. Merge and sort results by score
+      // ============================================================
+      const allResults = [...vectorResults, ...graphResults]
+        .filter((r) => r.score > 0)
+        .toSorted((a, b) => b.score - a.score)
+        .slice(0, maxResults);
 
       return jsonResult({
         query,
-        resultsCount: formattedResults.length,
-        results: formattedResults,
+        resultsCount: allResults.length,
+        results: allResults,
+        graph: {
+          entitiesCount: graphEntitiesCount,
+          relationsCount: graphRelationsCount,
+        },
       });
     },
   };

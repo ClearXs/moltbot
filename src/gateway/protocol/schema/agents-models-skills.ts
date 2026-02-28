@@ -71,6 +71,7 @@ export const AgentsUpdateParamsSchema = Type.Object(
     workspace: Type.Optional(NonEmptyString),
     model: Type.Optional(NonEmptyString),
     avatar: Type.Optional(Type.String()),
+    activated: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

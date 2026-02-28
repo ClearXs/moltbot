@@ -30,7 +30,7 @@ export const ComputerTriggerBar = forwardRef<HTMLButtonElement, ComputerTriggerB
           "hover:opacity-80",
           "px-md py-xs rounded-md bg-background-tertiary border border-border",
         )}
-        aria-label="查看企业运营助手虚拟机"
+        aria-label="查看 Hovi 虚拟机"
       >
         <Monitor className="w-3.5 h-3.5 text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary whitespace-nowrap">虚拟机</span>

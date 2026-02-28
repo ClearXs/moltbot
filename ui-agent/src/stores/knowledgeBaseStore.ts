@@ -44,6 +44,7 @@ interface KnowledgeBaseState {
   activeKbId: string | null;
   kbDetail: KnowledgeBase | null;
   isLoadingKbList: boolean;
+  kbError: string | null;
   isLoadingKbDetail: boolean;
   isCreatingKb: boolean;
   isUpdatingKb: boolean;
@@ -119,6 +120,7 @@ interface KnowledgeBaseState {
   selectChunk: (chunkId: string | null) => void;
   loadSettings: () => Promise<void>;
   updateSettings: (params: {
+    kbId?: string;
     vectorization?: Partial<KnowledgeSettingsResponse["vectorization"]>;
     graph?: Partial<KnowledgeSettingsResponse["graph"]>;
   }) => Promise<void>;
@@ -154,6 +156,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
   activeKbId: null,
   kbDetail: null,
   isLoadingKbList: false,
+  kbError: null,
   isLoadingKbDetail: false,
   isCreatingKb: false,
   isUpdatingKb: false,
@@ -196,7 +199,7 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
     const { kbLimit } = get();
     const nextLimit = params?.limit ?? kbLimit;
     const nextOffset = params?.offset ?? 0;
-    set({ isLoadingKbList: true });
+    set({ isLoadingKbList: true, kbError: null });
     try {
       const result = await listKnowledgeBases({
         limit: nextLimit,
@@ -217,8 +220,9 @@ export const useKnowledgeBaseStore = create<KnowledgeBaseState>((set, get) => ({
         kbOffset: result.offset,
         kbLimit: nextLimit,
       });
-    } finally {
-      set({ isLoadingKbList: false });
+    } catch (err) {
+      console.error("loadKbList failed:", err);
+      set({ kbError: err instanceof Error ? err.message : "加载失败" });
     }
   },
 

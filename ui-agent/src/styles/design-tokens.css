@@ -1,6 +1,6 @@
 /**
- * 设计令牌 - Bid Agent 企业运营助手
- * Design Tokens for Enterprise Operation Assistant
+ * 设计令牌 - Hovi 个人助手
+ * Design Tokens for Hovi Personal Assistant
  *
  * 基于Manus风格的浅色主题设计系统 - 支持多主题切换
  * Light theme design system inspired by Manus - Multi-theme support
@@ -133,6 +133,8 @@
   --warning-light: #fef3c7;
   --error: #ef4444;
   --error-light: #fee2e2;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   --info: #3b82f6;
   --info-light: #dbeafe;
 }
@@ -179,6 +181,8 @@
   --warning-light: #ffedd5;
   --error: #ef4444;
   --error-light: #fee2e2;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   --info: #0ea5e9; /* 使用天蓝色 */
   --info-light: #bae6fd;
 }
@@ -186,7 +190,7 @@
 /* ==================== 主题3: 紫罗兰 - 优雅高贵 · 创意灵感 ==================== */
 :root[data-theme="warm-green"] {
   /* 品牌色 / Brand Colors - 紫色系 */
-  --primary: #8b5cf6; /* 紫色 Violet */
+  --primary: #8b5cf6; /* 紫色 Hovi */
   --primary-dark: #7c3aed; /* 深紫 */
   --primary-light: #ddd6fe; /* 淡紫 */
   --primary-hover: #7c3aed; /* 悬停态 */
@@ -225,6 +229,8 @@
   --warning-light: #fce7f3;
   --error: #ef4444;
   --error-light: #fee2e2;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   --info: #8b5cf6; /* 使用紫色 */
   --info-light: #ddd6fe;
 }
@@ -271,6 +277,8 @@
   --warning-light: #fef3c7;
   --error: #ef4444;
   --error-light: #fee2e2;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   --info: #f97316; /* 使用橙色 */
   --info-light: #fed7aa;
 }
@@ -317,6 +325,8 @@
   --warning-light: #f9fafb;
   --error: #dc2626; /* 低饱和度红色 */
   --error-light: #fee2e2;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
   --info: #6b7280; /* 使用中灰 */
   --info-light: #e5e7eb;
 }
@@ -363,6 +373,8 @@
   --warning-light: #44403c;
   --error: #ef4444; /* 红色 Red 500 */
   --error-light: #7f1d1d; /* 深红 */
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
   --info: #a8a29e; /* 使用浅暖灰 */
   --info-light: #44403c;
 }
@@ -409,6 +421,8 @@
   --warning-light: #efa2011f;
   --error: #f25a5a; /* 错误红 */
   --error-light: #f25a5a14;
+  --destructive: #f25a5a;
+  --destructive-foreground: #ffffff;
   --info: #0081f2; /* 信息蓝 */
   --info-light: #0081f214;
 }
