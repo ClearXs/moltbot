@@ -69,7 +69,9 @@ function workbookToUniver(
         for (let colIndex = range.s.c; colIndex <= range.e.c; colIndex += 1) {
           const address = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
           const cell = worksheet[address];
-          if (!cell) continue;
+          if (!cell) {
+            continue;
+          }
 
           let value: string | number | boolean | undefined;
           if (cell.t === "n") {
@@ -179,7 +181,9 @@ export async function univerToXlsx(data: IWorkbookData, filePath: string): Promi
   // Create worksheets in order
   for (const sheetId of data.sheetOrder) {
     const sheetData = data.sheets[sheetId];
-    if (!sheetData) continue;
+    if (!sheetData) {
+      continue;
+    }
 
     const rowCount = Math.max(1, sheetData.rowCount || 0);
     const columnCount = Math.max(1, sheetData.columnCount || 0);
