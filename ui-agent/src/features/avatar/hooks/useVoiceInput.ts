@@ -147,11 +147,13 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     }
   }, [status, onStatusChange]);
 
-  // 快捷键处理
+  // 快捷键处理 - 使用 Ctrl+X (和 Violet 一样)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "v") {
+      // 使用 Ctrl+X 快捷键，与 Violet 一致
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
         e.preventDefault();
+        console.log("[useVoiceInput] Ctrl+X pressed, status:", status);
         if (status === "speaking") {
           interrupt();
         } else if (status !== "processing") {

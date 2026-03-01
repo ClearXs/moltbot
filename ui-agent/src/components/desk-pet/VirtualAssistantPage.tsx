@@ -53,6 +53,7 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
   const [minimized, setMinimized] = useState(false);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [vrmUrl, setVrmUrl] = useState<string | null>(null);
+  const [vrmLoading, setVrmLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [vrmError, setVrmError] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -71,36 +72,44 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
     if (!wsClient || !isConnected) return;
     try {
       setVrmError(false);
+      setVrmLoading(true);
       setVrmUrl(null);
       console.log("[VRM] Loading config for agent:", AGENT_ID);
-      const fileResult = await getAgentFile(wsClient, AGENT_ID, "IDENTITY.md");
+      const fileResult = await getAgentFile(wsClient, AGENT_ID, "persona.json");
       console.log("[VRM] Config file result:", fileResult);
-      console.log("[VRM] Checking file result:", {
-        ok: fileResult?.ok,
-        hasContent: !!fileResult?.content,
-        contentType: typeof fileResult?.content,
-      });
-      // Check for content existence (ok might be undefined but content exists)
-      if (fileResult?.content) {
-        try {
-          const config = JSON.parse(fileResult.content);
-          console.log("[VRM] Parsed config:", config, "vrm value:", config.vrm);
-          if (config.vrm) {
-            const url = `/files/${AGENT_ID}/${config.vrm}`;
-            console.log("[VRM] Setting URL:", url);
-            setVrmUrl(url);
-          } else {
-            console.log("[VRM] No vrm in config");
+
+      // 检查文件是否存在且有内容
+      const content = fileResult?.content;
+      if (content) {
+        const trimmed = content.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+          try {
+            const config = JSON.parse(trimmed);
+            console.log("[VRM] Parsed config:", config, "vrm value:", config.vrm);
+            if (config.vrm) {
+              const url = `/files/${AGENT_ID}/${config.vrm}`;
+              console.log("[VRM] Setting URL:", url);
+              setVrmUrl(url);
+            } else {
+              console.log("[VRM] No vrm in config");
+              setVrmLoading(false);
+            }
+          } catch (e) {
+            console.error("[VRM] JSON parse error:", e);
+            setVrmLoading(false);
           }
-        } catch (e) {
-          console.error("[VRM] JSON parse error:", e);
+        } else {
+          console.log("[VRM] persona.json is not valid JSON, skipping VRM load");
+          setVrmLoading(false);
         }
       } else {
-        console.log("[VRM] No valid file content");
+        console.log("[VRM] persona.json not found or empty, skipping VRM load");
+        setVrmLoading(false);
       }
     } catch (error) {
       console.error("[VRM] Failed to load config:", error);
       setVrmError(true);
+      setVrmLoading(false);
     }
   }, [wsClient, isConnected]);
 
@@ -183,7 +192,16 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
     <div className="w-full h-full relative">
       {/* VRM 显示区域 */}
       <div className="w-full h-full absolute inset-0">
-        {isConnected && !vrmError ? <VrmViewer modelUrl={vrmUrl} /> : null}
+        {vrmLoading ? (
+          <div className="flex items-center justify-center w-full h-full">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm text-muted-foreground">加载中...</span>
+            </div>
+          </div>
+        ) : isConnected && !vrmError ? (
+          <VrmViewer modelUrl={vrmUrl} />
+        ) : null}
       </div>
 
       {/* 右上角关闭按钮 */}

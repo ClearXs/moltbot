@@ -20,9 +20,13 @@ export function SessionDocuments({ sessionKey }: SessionDocumentsProps) {
     }
   }, [sessionKey, loadDocuments]);
 
-  // 如果没有文档且没有在加载，不显示
+  // 如果没有文档且没有在加载，显示提示
   if (documents.length === 0 && !isLoadingDocuments) {
-    return null;
+    return (
+      <div className="text-xs text-text-tertiary py-2">
+        暂无上传的文档。拖拽文件到对话输入框即可上传。
+      </div>
+    );
   }
 
   return (

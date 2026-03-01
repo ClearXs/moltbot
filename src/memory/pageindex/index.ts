@@ -65,7 +65,7 @@ export async function buildIndex(params: BuildIndexParams): Promise<BuildIndexRe
     const outputPath = await saveIndex(pageIndexTree, sessionKey, documentId, agentId);
 
     // 8. 更新元数据
-    await updateMeta(sessionKey, documentId, path.basename(filePath), outputPath, agentId);
+    await updateSessionMeta(sessionKey, documentId, path.basename(filePath), outputPath, agentId);
 
     return {
       success: true,
@@ -147,16 +147,28 @@ async function loadIndex(indexPath: string): Promise<PageIndexTree | null> {
 /**
  * 更新 Session PageIndex 元数据
  */
-async function updateMeta(
+export async function updateSessionMeta(
   sessionKey: string,
   documentId: string,
   filename: string,
-  indexPath: string,
+  indexPath: string | undefined,
   agentId: string = "default",
 ): Promise<void> {
   const cfg = loadConfig();
   const baseDir = resolveAgentWorkspaceDir(cfg, agentId);
   const metaPath = path.join(baseDir, "sessions", sessionKey, ".pageindex", "meta.json");
+
+  // 根据文件扩展名推断 mimeType
+  const ext = filename.toLowerCase().split(".").pop();
+  const mimeTypes: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    txt: "text/plain",
+    md: "text/markdown",
+    markdown: "text/markdown",
+  };
+  const mimeType = ext ? mimeTypes[ext] || "application/octet-stream" : "application/octet-stream";
 
   let meta: SessionPageIndexMeta;
 
@@ -177,8 +189,8 @@ async function updateMeta(
   const docMeta = {
     documentId,
     filename,
-    mimeType: "application/pdf",
-    indexPath,
+    mimeType,
+    indexPath: indexPath || null,
     builtAt: Date.now(),
   };
 

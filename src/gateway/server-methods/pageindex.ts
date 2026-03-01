@@ -175,6 +175,7 @@ export const pageIndexHandlers: GatewayRequestHandlers = {
 
       // 6. 构建 PageIndex（仅对 PDF）
       let pageIndexBuilt = false;
+      let indexPath: string | undefined;
       if (convertedFilePath.toLowerCase().endsWith(".pdf")) {
         const buildResult = await buildIndex({
           filePath: convertedFilePath,
@@ -185,13 +186,23 @@ export const pageIndexHandlers: GatewayRequestHandlers = {
 
         if (buildResult.success) {
           pageIndexBuilt = true;
+          indexPath = buildResult.indexPath;
           log.info(`PageIndex built successfully for ${p.filename}`);
         } else {
           log.warn(`PageIndex build failed: ${buildResult.error}`);
         }
       }
 
-      // 6. 清理临时文件
+      // 7. 保存文档到 session meta（所有文件类型）
+      try {
+        const { updateSessionMeta } = await import("../../memory/pageindex/index.js");
+        await updateSessionMeta(p.sessionKey, documentId, p.filename, indexPath, agentId);
+        log.info(`Document meta saved for ${p.filename}`);
+      } catch (metaError) {
+        log.warn(`Failed to save document meta: ${String(metaError)}`);
+      }
+
+      // 8. 清理临时文件
       try {
         await fs.unlink(tempFilePath);
       } catch {

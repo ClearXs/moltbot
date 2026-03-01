@@ -8,6 +8,14 @@ import { KnowledgeTagSelector } from "@/components/knowledge/KnowledgeTagSelecto
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useKnowledgeBaseStore } from "@/stores/knowledgeBaseStore";
@@ -360,7 +368,7 @@ export function KnowledgeSettingsTab() {
   return (
     <div className="h-full min-h-0 space-y-lg overflow-auto pr-xs pb-md scrollbar-thin [overscroll-behavior:contain]">
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[28rem]">
           <DialogHeader>
             <DialogTitle>删除知识库</DialogTitle>
           </DialogHeader>
@@ -466,18 +474,22 @@ export function KnowledgeSettingsTab() {
             />
           </SettingRow>
           <SettingRow title="权限" description="控制知识库可见范围。">
-            <select
-              className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+            <Select
               value={visibility}
-              onChange={(e) => {
+              onValueChange={(value) => {
                 setKbInfoDirty(true);
-                setVisibility(e.target.value as "private" | "team" | "public");
+                setVisibility(value as "private" | "team" | "public");
               }}
             >
-              <option value="private">仅自己</option>
-              <option value="team">团队</option>
-              <option value="public">公开</option>
-            </select>
+              <SelectTrigger className="w-full" size="default">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent side="top" position="popper" className="z-50 bg-white">
+                <SelectItem value="private">仅自己</SelectItem>
+                <SelectItem value="team">团队</SelectItem>
+                <SelectItem value="public">公开</SelectItem>
+              </SelectContent>
+            </Select>
           </SettingRow>
           <SettingRow title="标签" description="用于分类和筛选知识库。">
             <KnowledgeTagSelector
@@ -589,39 +601,46 @@ export function KnowledgeSettingsTab() {
               />
             </SettingRow>
             <SettingRow title="分块策略" description="文本分块的分隔方式。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+              <Select
                 value={chunkSeparator}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setBaseRetrievalDirty(true);
-                  setChunkSeparator(e.target.value as typeof chunkSeparator);
+                  setChunkSeparator(value as typeof chunkSeparator);
                 }}
               >
-                <option value="auto">自动分隔</option>
-                <option value="paragraph">按段落</option>
-                <option value="sentence">按句子</option>
-              </select>
+                <SelectTrigger className="w-full" size="default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  <SelectItem value="auto">自动分隔</SelectItem>
+                  <SelectItem value="paragraph">按段落</SelectItem>
+                  <SelectItem value="sentence">按句子</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow title="索引模式" description="决定索引质量和构建成本。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+              <Select
                 value={indexMode}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setBaseRetrievalDirty(true);
-                  setIndexMode(e.target.value as typeof indexMode);
+                  setIndexMode(value as typeof indexMode);
                 }}
               >
-                <option value="balanced">标准索引</option>
-                <option value="high_quality">高质量索引</option>
-              </select>
+                <SelectTrigger className="w-full" size="default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  <SelectItem value="balanced">标准索引</SelectItem>
+                  <SelectItem value="high_quality">高质量索引</SelectItem>
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow title="向量 Provider" description="向量模型提供商。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+              <Select
                 value={vectorProvider}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setVectorDirty(true);
-                  const nextProvider = e.target.value;
+                  const nextProvider = value;
                   setVectorProvider(nextProvider);
                   const options = getModelOptions(nextProvider, vectorModel);
                   if (options.length > 0 && !options.includes(vectorModel)) {
@@ -629,31 +648,41 @@ export function KnowledgeSettingsTab() {
                   }
                 }}
               >
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>
-                    {provider}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full" size="default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  {providerOptions.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow title="向量 Model" description="用于向量化的具体模型。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+              <Select
                 value={vectorModel}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setVectorDirty(true);
-                  setVectorModel(e.target.value);
+                  setVectorModel(value);
                 }}
               >
-                {getModelOptions(vectorProvider, vectorModel).length === 0 ? (
-                  <option value="">未检测到模型</option>
-                ) : null}
-                {getModelOptions(vectorProvider, vectorModel).map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  className="w-full"
+                  size="default"
+                  disabled={getModelOptions(vectorProvider, vectorModel).length === 0}
+                >
+                  <SelectValue placeholder="未检测到模型" />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  {getModelOptions(vectorProvider, vectorModel).map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
             {baseValidationError ? (
               <div className="text-xs text-error">{baseValidationError}</div>
@@ -696,18 +725,22 @@ export function KnowledgeSettingsTab() {
         </div>
         <div className="space-y-md">
           <SettingRow title="检索模式" description="决定召回方式：语义、关键词或混合。">
-            <select
-              className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm"
+            <Select
               value={retrievalMode}
-              onChange={(e) => {
+              onValueChange={(value) => {
                 setBaseRetrievalDirty(true);
-                setRetrievalMode(e.target.value as typeof retrievalMode);
+                setRetrievalMode(value as typeof retrievalMode);
               }}
             >
-              <option value="hybrid">混合检索</option>
-              <option value="semantic">语义检索</option>
-              <option value="keyword">关键词检索</option>
-            </select>
+              <SelectTrigger className="w-full" size="default">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent side="top" position="popper" className="z-50 bg-white">
+                <SelectItem value="hybrid">混合检索</SelectItem>
+                <SelectItem value="semantic">语义检索</SelectItem>
+                <SelectItem value="keyword">关键词检索</SelectItem>
+              </SelectContent>
+            </Select>
           </SettingRow>
           <SettingRow title="Top K" description="每次检索最多返回的候选数量。">
             <Input
@@ -801,29 +834,32 @@ export function KnowledgeSettingsTab() {
               title="图谱抽取器类型"
               description="选择图谱三元组抽取方式，当前版本仅支持 LLM。"
             >
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm disabled:bg-muted disabled:text-text-tertiary"
+              <Select
                 value={graphExtractor}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setGraphDirty(true);
-                  setGraphExtractor(e.target.value as "llm");
+                  setGraphExtractor(value as "llm");
                 }}
                 disabled={!baseGraphEnabled}
               >
-                {graphExtractorOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full" size="default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  {graphExtractorOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow title="Provider" description="图谱抽取模型的提供商。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm disabled:bg-muted disabled:text-text-tertiary"
+              <Select
                 value={graphProvider}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setGraphDirty(true);
-                  const nextProvider = e.target.value;
+                  const nextProvider = value;
                   setGraphProvider(nextProvider);
                   const options = getModelOptions(nextProvider, graphModel);
                   if (options.length > 0 && !options.includes(graphModel)) {
@@ -832,32 +868,44 @@ export function KnowledgeSettingsTab() {
                 }}
                 disabled={!baseGraphEnabled}
               >
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>
-                    {provider}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full" size="default">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  {providerOptions.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {provider}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
             <SettingRow title="Model" description="图谱抽取使用的具体模型。">
-              <select
-                className="h-9 w-full rounded-md border border-border-light bg-white px-sm text-sm disabled:bg-muted disabled:text-text-tertiary"
+              <Select
                 value={graphModel}
-                onChange={(e) => {
+                onValueChange={(value) => {
                   setGraphDirty(true);
-                  setGraphModel(e.target.value);
+                  setGraphModel(value);
                 }}
                 disabled={!baseGraphEnabled}
               >
-                {getModelOptions(graphProvider, graphModel).length === 0 ? (
-                  <option value="">未检测到模型</option>
-                ) : null}
-                {getModelOptions(graphProvider, graphModel).map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  className="w-full"
+                  size="default"
+                  disabled={
+                    !baseGraphEnabled || getModelOptions(graphProvider, graphModel).length === 0
+                  }
+                >
+                  <SelectValue placeholder="未检测到模型" />
+                </SelectTrigger>
+                <SelectContent side="top" position="popper" className="z-50 bg-white">
+                  {getModelOptions(graphProvider, graphModel).map((model) => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </SettingRow>
           </div>
         )}

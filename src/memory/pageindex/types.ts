@@ -89,7 +89,7 @@ export interface SessionDocumentMeta {
   documentId: string;
   filename: string;
   mimeType: string;
-  indexPath: string;
+  indexPath: string | null;
   builtAt: number;
 }
 

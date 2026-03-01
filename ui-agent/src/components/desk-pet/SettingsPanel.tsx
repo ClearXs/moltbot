@@ -73,24 +73,34 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
     setLoading(true);
 
     try {
-      const fileResult = await getAgentFile(wsClient, agentId, "IDENTITY.md");
+      const fileResult = await getAgentFile(wsClient, agentId, "persona.json");
       if (fileResult?.content) {
-        const config = JSON.parse(fileResult.content);
-        // 支持 idleMotion (string) 或 motions (array)
-        let motions: string[] = [];
-        if (Array.isArray(config.motions)) {
-          motions = config.motions;
-        } else if (config.motions) {
-          motions = [config.motions];
-        } else if (config.idleMotion) {
-          motions = [config.idleMotion];
+        const content = fileResult.content.trim();
+        // 检查是否是有效的 JSON 配置
+        if (content.startsWith("{") && content.endsWith("}")) {
+          try {
+            const config = JSON.parse(content);
+            // 支持 idleMotion (string) 或 motions (array)
+            let motions: string[] = [];
+            if (Array.isArray(config.motions)) {
+              motions = config.motions;
+            } else if (config.motions) {
+              motions = [config.motions];
+            } else if (config.idleMotion) {
+              motions = [config.idleMotion];
+            }
+            setPersonaConfig((prev) => ({
+              ...prev,
+              vrm: config.vrm || "",
+              refAudio: config.refAudio || "",
+              motions: motions,
+            }));
+          } catch (e) {
+            console.error("Failed to parse persona.json as JSON:", e);
+          }
+        } else {
+          console.log("persona.json is not JSON config, skipping");
         }
-        setPersonaConfig((prev) => ({
-          ...prev,
-          vrm: config.vrm || "",
-          refAudio: config.refAudio || "",
-          motions: motions,
-        }));
       }
 
       const soulResult = await getAgentFile(wsClient, agentId, "SOUL.md");
@@ -125,7 +135,7 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
       await setAgentFile(
         wsClient,
         agentId,
-        "IDENTITY.md",
+        "persona.json",
         JSON.stringify({
           vrm: personaConfig.vrm,
           refAudio: personaConfig.refAudio,
@@ -179,6 +189,22 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
 
       setPersonaConfig((prev) => ({ ...prev, vrm: fileName }));
       console.log("Updated personaConfig.vrm to:", fileName);
+
+      // 自动保存配置
+      await setAgentFile(
+        wsClient,
+        agentId,
+        "persona.json",
+        JSON.stringify({
+          vrm: fileName,
+          refAudio: personaConfig.refAudio,
+          motions: personaConfig.motions,
+        }),
+      );
+      console.log("Auto-saved persona.json with VRM path");
+
+      // 触发刷新回调，让页面重新加载 VRM
+      onSave?.();
     } catch (error) {
       console.error("Failed to upload VRM:", error);
     } finally {

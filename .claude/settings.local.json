@@ -81,7 +81,9 @@
       "Bash(pnpm test:coverage:*)",
       "Bash(pnpm run)",
       "Bash(pnpm tsgo:*)",
-      "Bash(git -c user.useConfigOnly=true commit --quiet --allow-empty-message --file -)"
+      "Bash(git -c user.useConfigOnly=true commit --quiet --allow-empty-message --file -)",
+      "Bash(pnpm --filter ui-agent tsgo --quiet:*)",
+      "Bash(bunx tsc:*)"
     ]
   }
 }

@@ -19,6 +19,15 @@ export function VoiceControl({
   onRecordingEnd,
   onTestSpeak,
 }: VoiceControlProps) {
+  console.log(
+    "[VoiceControl] Render, isRecording:",
+    isRecording,
+    "isSpeaking:",
+    isSpeaking,
+    "hasPermission:",
+    hasPermission,
+  );
+
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -40,11 +49,14 @@ export function VoiceControl({
   }, [requestPermission]);
 
   const handleMouseDown = () => {
+    console.log("[VoiceControl] MouseDown, hasPermission:", hasPermission);
     if (!hasPermission) {
       requestPermission();
       return;
     }
+    console.log("[VoiceControl] Calling onRecordingStart");
     onRecordingStart();
+    console.log("[VoiceControl] Calling startRecording");
     startRecording();
   };
 
@@ -117,6 +129,7 @@ export function VoiceControl({
               ? "bg-gray-400 cursor-not-allowed"
               : "bg-primary hover:bg-primary/90"
         }`}
+        onClick={() => console.log("[VoiceControl] Click!")}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}

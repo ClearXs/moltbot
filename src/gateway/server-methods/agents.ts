@@ -62,7 +62,18 @@ const BOOTSTRAP_FILE_NAMES_POST_ONBOARDING = BOOTSTRAP_FILE_NAMES.filter(
 
 const MEMORY_FILE_NAMES = [DEFAULT_MEMORY_FILENAME, DEFAULT_MEMORY_ALT_FILENAME] as const;
 
-const ALLOWED_FILE_NAMES = new Set<string>([...BOOTSTRAP_FILE_NAMES, ...MEMORY_FILE_NAMES]);
+// 角色配置文件名
+const PERSONA_FILE_NAMES = ["persona.json"] as const;
+
+// 场景配置文件名
+const SCENE_FILE_NAMES = ["scenes.json"] as const;
+
+const ALLOWED_FILE_NAMES = new Set<string>([
+  ...BOOTSTRAP_FILE_NAMES,
+  ...MEMORY_FILE_NAMES,
+  ...PERSONA_FILE_NAMES,
+  ...SCENE_FILE_NAMES,
+]);
 
 function resolveAgentWorkspaceFileOrRespondError(
   params: Record<string, unknown>,

@@ -37,18 +37,22 @@ export function useAsr(options: UseAsrOptions = {}): UseAsrReturn {
   }, []);
 
   const start = useCallback(() => {
+    console.log("[useAsr] start called, recognizer:", recognizerRef.current);
     if (!recognizerRef.current) {
       setError("Speech recognition not initialized");
+      console.log("[useAsr] No recognizer");
       return;
     }
 
     if (!recognizerRef.current.isSupported()) {
       setError("Browser does not support speech recognition");
+      console.log("[useAsr] Not supported");
       return;
     }
 
     setError(null);
     setTranscript("");
+    console.log("[useAsr] Starting recognition...");
 
     recognizerRef.current.setLanguage(language);
     recognizerRef.current.start(

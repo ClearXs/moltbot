@@ -171,7 +171,7 @@ export function VirtualAssistant({ onOpenSettings }: VirtualAssistantProps) {
             } ${voiceStatus === "speaking" ? "bg-blue-500" : ""}`}
             title={
               voiceStatus === "idle"
-                ? "开始语音 (Ctrl+Shift+V)"
+                ? "开始语音 (Ctrl+X)"
                 : voiceStatus === "listening"
                   ? "停止语音"
                   : voiceStatus === "processing"
@@ -218,7 +218,7 @@ export function VirtualAssistant({ onOpenSettings }: VirtualAssistantProps) {
                       ? "Hovi 思考中..."
                       : voiceStatus === "speaking"
                         ? responseText
-                        : "点击麦克风或按 Ctrl+Shift+V 开始对话"}
+                        : "点击麦克风或按 Ctrl+X 开始对话"}
                 </p>
                 {voiceError && (
                   <p className="text-red-400 text-xs text-center mt-1">{voiceError}</p>
@@ -244,7 +244,7 @@ export function VirtualAssistant({ onOpenSettings }: VirtualAssistantProps) {
           <ContextMenuItem onClick={handleToggleVoice} disabled={voiceStatus === "processing"}>
             <Mic className="w-4 h-4 mr-2" />
             {voiceStatus === "listening" ? "停止语音" : "开始语音"}
-            <span className="ml-auto text-xs text-gray-400">⌃⇧V</span>
+            <span className="ml-auto text-xs text-gray-400">⌃X</span>
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleOpenSettings}>
@@ -257,45 +257,18 @@ export function VirtualAssistant({ onOpenSettings }: VirtualAssistantProps) {
   );
 
   // 全局点击测试
-  React.useEffect(() => {
-    const handler = () => console.log("[GLOBAL] Click detected!");
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, []);
-
   return (
-    <div
-      className="fixed z-50"
-      style={{ position: "fixed", top: 0, left: 0 }}
-      onClick={() => console.log("[WRAPPER] Click!")}
+    <Draggable
+      nodeRef={nodeRef}
+      handle=".va-handle"
+      cancel="button"
+      bounds="parent"
+      defaultPosition={{ x: -320, y: -420 }}
     >
-      {/* 测试按钮 - 用于调试 */}
-      <button
-        type="button"
-        onClick={() => console.log("[TEST] Direct button clicked!")}
-        style={{
-          position: "fixed",
-          top: 10,
-          left: 10,
-          zIndex: 99999,
-          background: "red",
-          color: "white",
-          padding: "10px",
-        }}
-      >
-        TEST CLICK
-      </button>
-      <Draggable
-        nodeRef={nodeRef}
-        handle=".va-handle"
-        bounds="parent"
-        defaultPosition={{ x: -320, y: -420 }}
-      >
-        <div ref={nodeRef} className="fixed z-50">
-          {minimized ? renderMinimizedButton() : renderExpandedContent()}
-        </div>
-      </Draggable>
-    </div>
+      <div ref={nodeRef} className="fixed z-50">
+        {minimized ? renderMinimizedButton() : renderExpandedContent()}
+      </div>
+    </Draggable>
   );
 }
 
