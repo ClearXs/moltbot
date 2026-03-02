@@ -79,7 +79,7 @@ export function VirtualAssistant({ onOpenSettings }: VirtualAssistantProps) {
   const loadConfig = useCallback(async () => {
     if (!wsClient || !isConnected || vrmError) return;
     try {
-      const fileResult = await getAgentFile(wsClient, "main", "IDENTITY.md");
+      const fileResult = await getAgentFile(wsClient, "main", "persona.json");
       if (fileResult?.ok && fileResult.content) {
         const config = JSON.parse(fileResult.content);
         if (config.vrm) {

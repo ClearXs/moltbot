@@ -26,6 +26,7 @@ import {
   ContextMenuTrigger,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
+import { useVoiceInput } from "@/features/avatar/hooks/useVoiceInput";
 import { getAgentFile } from "@/features/persona/services/personaApi";
 import { useConnectionStore } from "@/stores/connectionStore";
 
@@ -50,15 +51,22 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
   const AGENT_ID = "main";
 
   // 状态
-  const [minimized, setMinimized] = useState(false);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [vrmUrl, setVrmUrl] = useState<string | null>(null);
   const [vrmLoading, setVrmLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [vrmError, setVrmError] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const nodeRef = useRef<HTMLDivElement>(null);
+
+  // 语音输入
+  const {
+    status: voiceStatus,
+    transcript,
+    responseText,
+    error: voiceError,
+    toggle: handleToggleVoice,
+  } = useVoiceInput({
+    onStatusChange: (s) => console.log("[Voice] Status changed to:", s),
+  });
 
   // 按钮拖动状态
   const [btnPosition, setBtnPosition] = useState<{ x: number; y: number } | null>(null);
@@ -120,20 +128,8 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
   }, [isConnected, vrmError, loadConfig]);
 
   // 右键菜单操作
-  const handleToggleMinimize = useCallback(() => {
-    setMinimized((m) => !m);
-  }, []);
-
   const handleToggleSubtitles = useCallback(() => {
     setShowSubtitles((s) => !s);
-  }, []);
-
-  const handleOpenSettings = useCallback(() => {
-    setSettingsOpen(true);
-  }, []);
-
-  const handleToggleVoice = useCallback(() => {
-    setIsListening((l) => !l);
   }, []);
 
   // 按钮拖动处理
@@ -264,11 +260,24 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
           {/* 语音按钮 */}
           <button
             onClick={handleToggleVoice}
-            className="p-2 rounded-full transition-colors cursor-pointer"
-            title={isListening ? "停止语音" : "开始语音"}
+            className={`p-2 rounded-full transition-colors cursor-pointer ${
+              voiceStatus === "listening" ? "bg-red-500" : ""
+            } ${voiceStatus === "speaking" ? "bg-blue-500" : ""}`}
+            title={
+              voiceStatus === "idle"
+                ? "开始语音 (Ctrl+X)"
+                : voiceStatus === "listening"
+                  ? "停止语音"
+                  : voiceStatus === "processing"
+                    ? "处理中..."
+                    : "播放中..."
+            }
+            disabled={voiceStatus === "processing"}
           >
-            {isListening ? (
-              <Mic className="w-5 h-5 text-gray-900" />
+            {voiceStatus === "speaking" ? (
+              <Mic className="w-5 h-5 text-white" />
+            ) : voiceStatus === "listening" ? (
+              <Mic className="w-5 h-5 text-white animate-pulse" />
             ) : (
               <MicOff className="w-5 h-5 text-gray-900 opacity-60" />
             )}
@@ -291,8 +300,15 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
       {showSubtitles && isConnected && !vrmError && (
         <div className="absolute bottom-24 left-0 right-0 p-4 bg-gradient-to-t from-white/50 to-transparent z-10">
           <p className="text-gray-900 text-center text-lg">
-            {isListening ? "正在聆听..." : "点击麦克风开始对话"}
+            {voiceStatus === "listening"
+              ? transcript || "正在聆听..."
+              : voiceStatus === "processing"
+                ? "Hovi 思考中..."
+                : voiceStatus === "speaking"
+                  ? responseText
+                  : "点击麦克风或按 Ctrl+X 开始对话"}
           </p>
+          {voiceError && <p className="text-red-500 text-center text-sm mt-1">{voiceError}</p>}
         </div>
       )}
     </div>
