@@ -125,9 +125,12 @@ export class KnowledgeGraphBuilder {
   }
 
   private getChunks(): Array<{ id: string; text: string }> {
+    const pathKey = `knowledge/${this.documentId}`;
     const rows = this.db
-      .prepare(`SELECT id, text FROM chunks WHERE kb_id = ? AND document_id = ? ORDER BY "index"`)
-      .all(this.kbId, this.documentId) as Array<{ id: string; text: string }>;
+      .prepare(
+        `SELECT id, text FROM chunks WHERE path = ? AND source = 'knowledge' ORDER BY start_line`,
+      )
+      .all(pathKey) as Array<{ id: string; text: string }>;
     return rows;
   }
 

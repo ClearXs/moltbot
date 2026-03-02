@@ -36,6 +36,7 @@ interface PersonaConfig {
   vrm: string;
   refAudio: string;
   motions: string[]; // 已上传的动作列表
+  currentMotion: string | null; // 当前选中的动作
   promptLang: string;
 }
 
@@ -53,6 +54,7 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
     vrm: "",
     refAudio: "",
     motions: [],
+    currentMotion: null,
     promptLang: "zh",
   });
   const [scenes, setScenes] = useState<LocalScene[]>([]);
@@ -89,11 +91,14 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
             } else if (config.idleMotion) {
               motions = [config.idleMotion];
             }
+            // 当前选中的动作
+            const currentMotion = config.currentMotion || (motions.length > 0 ? motions[0] : null);
             setPersonaConfig((prev) => ({
               ...prev,
               vrm: config.vrm || "",
               refAudio: config.refAudio || "",
               motions: motions,
+              currentMotion: currentMotion,
             }));
           } catch (e) {
             console.error("Failed to parse persona.json as JSON:", e);
@@ -140,6 +145,7 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
           vrm: personaConfig.vrm,
           refAudio: personaConfig.refAudio,
           motions: personaConfig.motions,
+          currentMotion: personaConfig.currentMotion,
         }),
       );
 
@@ -199,6 +205,7 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
           vrm: fileName,
           refAudio: personaConfig.refAudio,
           motions: personaConfig.motions,
+          currentMotion: personaConfig.currentMotion,
         }),
       );
       console.log("Auto-saved persona.json with VRM path");
@@ -262,6 +269,7 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
       setPersonaConfig((prev) => ({
         ...prev,
         motions: [...prev.motions, fileName],
+        currentMotion: fileName, // 自动选中刚上传的动作
       }));
     } catch (error) {
       console.error("Failed to upload motion:", error);
@@ -534,19 +542,48 @@ export function SettingsPanel({ open, onOpenChange, onClose, onSave }: SettingsP
                     personaConfig.motions.map((motion) => (
                       <div
                         key={motion}
-                        className="flex items-center justify-between p-1.5 border border-dashed rounded-md text-xs hover:bg-muted/50"
+                        className={`flex items-center justify-between p-1.5 border rounded-md text-xs cursor-pointer ${
+                          personaConfig.currentMotion === motion
+                            ? "border-primary bg-primary/10"
+                            : "border-dashed hover:bg-muted/50"
+                        }`}
+                        onClick={() =>
+                          setPersonaConfig((p) => ({
+                            ...p,
+                            currentMotion: motion,
+                          }))
+                        }
                       >
-                        <span className="truncate flex-1">{motion.split("/").pop()}</span>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <input
+                            type="radio"
+                            name="current-motion"
+                            checked={personaConfig.currentMotion === motion}
+                            onChange={() =>
+                              setPersonaConfig((p) => ({
+                                ...p,
+                                currentMotion: motion,
+                              }))
+                            }
+                            className="flex-shrink-0"
+                          />
+                          <span className="truncate">{motion.split("/").pop()}</span>
+                          {personaConfig.currentMotion === motion && (
+                            <span className="text-xs text-primary flex-shrink-0">(当前)</span>
+                          )}
+                        </div>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5"
-                          onClick={() =>
+                          className="h-5 w-5 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setPersonaConfig((p) => ({
                               ...p,
                               motions: p.motions.filter((m) => m !== motion),
-                            }))
-                          }
+                              currentMotion: p.currentMotion === motion ? null : p.currentMotion,
+                            }));
+                          }}
                         >
                           <X className="w-3 h-3" />
                         </Button>

@@ -53,6 +53,7 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
   // 状态
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [vrmUrl, setVrmUrl] = useState<string | null>(null);
+  const [motionUrl, setMotionUrl] = useState<string | null>(null);
   const [vrmLoading, setVrmLoading] = useState(false);
   const [vrmError, setVrmError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -98,6 +99,18 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
               const url = `/files/${AGENT_ID}/${config.vrm}`;
               console.log("[VRM] Setting URL:", url);
               setVrmUrl(url);
+
+              // 加载动作
+              const currentMotion = config.currentMotion || config.idleMotion;
+              if (currentMotion) {
+                const mUrl = `/files/${AGENT_ID}/${currentMotion}`;
+                console.log("[VRM] Setting motion URL:", mUrl);
+                setMotionUrl(mUrl);
+              } else {
+                setMotionUrl(null);
+              }
+
+              setVrmLoading(false);
             } else {
               console.log("[VRM] No vrm in config");
               setVrmLoading(false);
@@ -196,7 +209,7 @@ export function VirtualAssistantPage({ onClose }: VirtualAssistantPageProps) {
             </div>
           </div>
         ) : isConnected && !vrmError ? (
-          <VrmViewer modelUrl={vrmUrl} />
+          <VrmViewer modelUrl={vrmUrl} motionUrl={motionUrl} />
         ) : null}
       </div>
 
